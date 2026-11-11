@@ -1,9 +1,10 @@
 import { writeFileSync, mkdirSync } from 'fs';
-import { defaultConfig, validateConfig, worldToLocal, station, rawStation } from '../js/model.js';
+import { defaultConfig, validateConfig, worldToLocal, station, rawStation, bladeSvgStart } from '../js/model.js';
 import { effectiveJoint, seamProfile, widthAt, jointDepthMm } from '../js/joint.js';
 import { buildMold, meshAnalysis } from '../js/mesh.js';
 import { buildBlade, bladePlans, thickenedSurfaces, unrotateBlade } from '../js/blade.js';
 import { meshToStl } from '../js/stl.js';
+import { bladePlanformSvg } from '../js/svg-blade.js';
 
 const config = validateConfig(defaultConfig());
 const segments = config.printableSegments;
@@ -13,6 +14,16 @@ if (config.printer !== 500 || segments.length !== 1 || segments[0].start !== 0 |
   console.error('FAIL: default printer 500 should be one segment, 0–450 mm');
   process.exit(1);
 }
+if (!config.rootPadEnabled || config.rootPadLength !== 30 || config.rootBlendLength !== 5) {
+  console.error('FAIL: root pad should default on, length 30 mm, blend 5 mm');
+  process.exit(1);
+}
+const svg = bladePlanformSvg(config);
+if (bladeSvgStart(config) !== 35 || !svg.includes('SVG 葉片長 415.000 mm，從距圓心 35.000 mm 延伸至 450.000 mm')) {
+  console.error('FAIL: default laser SVG should start at 35 mm and be 415 mm long');
+  process.exit(1);
+}
+console.log('default root pad on; laser SVG outline 35–450 mm (415 mm)');
 
 function boundsOf(mesh) {
   const p = mesh.positions;
@@ -38,7 +49,40 @@ for (const kind of ['lower', 'upper']) {
     components: analysis.components, volume: +analysis.volume.toFixed(3),
     bbox: `X ${b.minX.toFixed(2)}–${b.maxX.toFixed(2)} Y ${b.minY.toFixed(2)}–${b.maxY.toFixed(2)} Z ${b.minZ.toFixed(2)}–${b.maxZ.toFixed(2)}`
   }));
-  if (!analysis.watertight || analysis.volume <= 0 || b.maxY > 450.05 || b.minY < -0.05) failed = true;
+  if (!analysis.watertight || analysis.volume <= 0 || analysis.components !== 1 || b.maxY > 450.05 || b.minY < -0.05) failed = true;
+}
+
+const padOff = validateConfig({ ...defaultConfig(), rootPadEnabled: false });
+console.log('rootPadEnabled=false (v1.2 geometry still builds):');
+if (padOff.rootPadEnabled || bladeSvgStart(padOff) !== 0) {
+  console.error('FAIL: rootPadEnabled=false should stay off and keep the laser outline from y=0');
+  failed = true;
+}
+const padOffSvg = bladePlanformSvg(padOff);
+if (!padOffSvg.includes('SVG 葉片長 450.000 mm，從距圓心 0.000 mm 延伸至 450.000 mm')) {
+  console.error('FAIL: rootPadEnabled=false laser SVG should be the full 450 mm');
+  failed = true;
+}
+for (const kind of ['lower', 'upper']) {
+  const mesh = buildMold(padOff, 0, kind);
+  const analysis = meshAnalysis(mesh.positions, mesh.indices);
+  const b = boundsOf(mesh);
+  console.log(JSON.stringify({
+    rootPadEnabled: false,
+    file: kind === 'lower' ? 'lower-concave-mold-01.stl' : 'upper-convex-mold-01.stl',
+    watertight: analysis.watertight,
+    components: analysis.components,
+    volume: +analysis.volume.toFixed(3),
+    bbox: `X ${b.minX.toFixed(2)}–${b.maxX.toFixed(2)} Y ${b.minY.toFixed(2)}–${b.maxY.toFixed(2)} Z ${b.minZ.toFixed(2)}–${b.maxZ.toFixed(2)}`
+  }));
+  if (!analysis.watertight || analysis.volume <= 0 || analysis.components !== 1) failed = true;
+}
+const bladeOn = Buffer.from(meshToStl(buildBlade(config, 0), 'blade-full-01'));
+const bladeOff = Buffer.from(meshToStl(buildBlade(padOff, 0), 'blade-full-01'));
+console.log('blade-full-01.stl bytes', bladeOn.length, bladeOn.equals(bladeOff) ? 'identical with root pad on or off' : 'DIFFER');
+if (!bladeOn.equals(bladeOff)) {
+  console.error('FAIL: full-blade STL must be unchanged by the root-pad default (rawStation)');
+  failed = true;
 }
 
 const splitConfig = validateConfig({ ...defaultConfig(), printer: 250 });
