@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="輸入風機葉片尺寸，預覽 NACA 2412 上翼面配對壓模並匯出封閉的分段 STL。">
-  <title>風機葉片與壓模設計器 v1.1.1</title>
+  <title>風機葉片與壓模設計器 v1.1.2</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -15,9 +15,9 @@
       <div>
         <div class="eyebrow">Wind blade tooling</div>
         <h1>風機葉片與壓模設計器</h1>
-        <p class="intro">一組互補的上、下模夾住同一片巴沙木，壓出上翼面的弧度。站位定義葉片形狀；模具只在超出列印長度時自動拆件。</p>
+        <p class="intro" id="intro">一組互補的上、下模夾住同一片巴沙木，壓出上翼面的弧度；模具只在超出列印長度時自動拆件。</p>
       </div>
-      <div class="tag">NACA 2412 · PLA+ 原型模具 · v1.1.1</div>
+      <div class="tag">NACA 2412 · PLA+ 原型模具 · v1.1.2</div>
     </header>
 
     <div class="layout">
@@ -25,14 +25,14 @@
         <h2 id="params-title">葉片與模具參數</h2>
         <p class="sub">初始值採用你上傳的參數檔；每列站位控制模具弦長與扭角，站位之間保持連續，不會因此切開模具。你仍可直接修改或載入其他參數。</p>
         <div class="field-grid">
-          <label><span class="field-title">木片厚度 <span class="unit">mm</span></span><input id="wood" type="number" min="0.5" max="5" step="0.1" value="2"></label>
-          <label><span class="field-title">模具間隙 <span class="unit">mm</span></span><input id="clearance" type="number" min="0" max="1" step="0.05" value="0.2"></label>
-          <label><span class="field-title">模具兩側預留（每側） <span class="unit">mm</span></span><input id="moldMargin" type="number" min="0" max="25" step="1" value="8"></label>
-          <label><span class="field-title">模具背板厚度 <span class="unit">mm</span></span><input id="moldBackThickness" type="number" min="3" max="30" step="1" value="5"></label>
-          <label><span class="field-title">扭轉軸位置（自前緣起） <span class="unit">% 弦長</span></span><input id="twistAxis" type="number" min="0" max="100" step="1" value="25"></label>
+          <label id="woodField"><span class="field-title">木片厚度 <span class="unit">mm</span></span><input id="wood" type="number" min="0.5" max="5" step="0.1" value="2"></label>
+          <label id="clearanceField"><span class="field-title">模具間隙 <span class="unit">mm</span></span><input id="clearance" type="number" min="0" max="1" step="0.05" value="0.2"></label>
+          <label id="moldMarginField"><span class="field-title">模具兩側預留（每側） <span class="unit">mm</span></span><input id="moldMargin" type="number" min="0" max="25" step="1" value="8"></label>
+          <label id="moldBackField"><span class="field-title">模具背板厚度 <span class="unit">mm</span></span><input id="moldBackThickness" type="number" min="3" max="30" step="1" value="5"></label>
+          <label id="twistAxisField"><span class="field-title">扭轉軸位置（自前緣起） <span class="unit">% 弦長</span></span><input id="twistAxis" type="number" min="0" max="100" step="1" value="25"></label>
           <label class="wide"><span class="field-title">列印機可用長度（葉片方向） <span class="unit">mm</span></span><input id="printer" type="number" min="80" step="1" value="250"></label>
         </div>
-        <p class="note">背板厚度是模具曲面外側的最薄厚度；預設 5 mm，最薄可調至 3 mm。大尺寸模具先用 5 mm；若試印後沒有彎曲，再逐步降到 4 或 3 mm，確認受壓不變形後再正式使用。</p>
+        <p class="note" id="moldBackNote">背板厚度是模具曲面外側的最薄厚度；預設 5 mm，最薄可調至 3 mm。大尺寸模具先用 5 mm；若試印後沒有彎曲，再逐步降到 4 或 3 mm，確認受壓不變形後再正式使用。</p>
         <div class="station-head"><h3>造型站位</h3><button id="addStation" class="secondary station-action" type="button">＋ 新增站位</button></div>
         <div class="station-wrap"><table class="station-table"><thead><tr><th>站</th><th>距根部 (mm)</th><th>模具弦長 (mm)</th><th>扭角 (°)</th><th></th></tr></thead><tbody id="stationRows"></tbody></table></div>
         <div class="developed-width">
@@ -41,7 +41,7 @@
           <p>展開寬度依 NACA 2412 上表面弧長估算，會比弦長稍大；未含雷切留量、木片伸縮或短切張開量。這是理論尺寸對照，方便你輸入時比較。</p>
         </div>
         <p class="note">站位目前是示意值，請按你的葉片設計修改。弦長和扭角會在相鄰站位間平順變化；站位只控制造型，不代表接縫。扭角繞「扭轉軸位置」設定的弦向基準線旋轉。</p>
-        <div class="root-spec">
+        <div class="root-spec" id="rootPadSection">
           <h3>葉根舌片接合段</h3>
           <p>在靠近輪鼓的葉根，把整個翼型截面壓成固定角度的平面段，供舌片接合；外側再平順過渡回翼型。</p>
           <div class="root-values">
@@ -56,8 +56,8 @@
           <div id="moldDimensionsResult" class="join-result" aria-live="polite">根部 STL 名目外寬：36 mm（弦長 20 + 每側預留 8 mm）</div>
           <p class="root-note">平面接合段預設不啟用；勾選後可當作橫條黏接平台。扁木條預設 6 × 3 mm，位置在根部 15 mm，兩側各留 0.2 mm；下模只在橫條接合位置做淺凹承座，不反轉整片翼型。請依實際木條調整；葉片雷切 SVG 仍略過平面段與過渡段。</p>
         </div>
-        <p class="note">雷切 SVG 會以 1:1 比例並排輸出兩層巴沙木的葉片圖，短切線與外輪廓均為紅色切割線；扭角和翼型弧度由模具壓出。</p>
-        <div class="kerf-spec">
+        <p class="note" id="laserSvgNote">雷切 SVG 會以 1:1 比例並排輸出兩層巴沙木的葉片圖，短切線與外輪廓均為紅色切割線；扭角和翼型弧度由模具壓出。</p>
+        <div class="kerf-spec" id="slitSection">
           <h3>巴沙木短切設定</h3>
           <p>先用目前的建議值即可：兩層都是「直線交錯」。短切線沿葉片長度方向；每一排左右錯開，上下兩層也錯開。通常只需先調切線長度、切線間距與邊緣保留。</p>
           <div class="root-values">
@@ -87,7 +87,7 @@
           </details>
           <p class="root-note">建議先用預設設定試切。若木片容易裂，增加外緣保留或圓角；若不容易貼合，再逐步縮小排距。葉根保留不切長度目前為 0 mm。</p>
         </div>
-        <div class="kerf-spec">
+        <div class="kerf-spec" id="ribParamsSection">
           <h3>雷切翼肋骨架模</h3>
           <p>每站的上模、下模剖面同排在一片木板上，以一條貫穿切線分開；底座只保留兩側定位卡槽，不設中央卡槽或固定梁。</p>
           <div class="root-values">
@@ -100,12 +100,12 @@
           </div>
           <p class="root-note">每片站位板的紅色弧線會從板件左側切到右側，切下後得到上、下模兩片；藍字為站位編號與模具標示。底板每站只開兩個外側卡槽，中央卡槽及梳齒固定梁取消。上下模壓合時仍須以木片厚度加模具間隙留出工作空間。</p>
         </div>
-        <div class="clamp-spec">
+        <div class="clamp-spec" id="clampSection">
           <h3>上下模夾合鎖點</h3>
           <p>預設以外部夾具或壓重固定上下模，不額外增加鎖耳。若你想用螺絲夾合，勾選後每片上、下模會加 4 個縮短版鎖耳與 Ø3.4 mm 通孔：外伸 9 mm、沿葉片方向長 10 mm，供 M3 螺絲、墊片與螺帽使用。</p>
           <label class="root-toggle"><input id="clampEnabled" type="checkbox"><span>加入 M3 夾模鎖耳（每片 4 孔）</span></label>
         </div>
-        <div class="clamp-spec">
+        <div class="clamp-spec" id="locatorSection">
           <h3>葉片定位擋邊</h3>
           <p>在下模兩側、葉片輪廓外加擋邊，減少合模時葉片滑動。若擋邊高於原有合模間隙，上模會在對應外側自動切出退讓槽；槽不進入葉片接觸面，並保留至少 1.5 mm 背板。</p>
           <div class="root-values">
@@ -139,7 +139,7 @@
         <section class="panel preview" aria-labelledby="preview-title">
           <div class="preview-head">
             <div><h2 id="preview-title">模具外形預覽</h2><p id="previewSubtitle">虛線是造型站位；只有超出列印長度的接縫才會拆開</p></div>
-            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end"><label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">模具做法<select id="toolingMode" style="width:auto;min-width:150px"><option value="printed">3D 列印葉片上翼面壓模</option><option value="blade">完整翼型葉片（直接列印）</option><option value="ribs">雷切翼肋骨架模</option></select></label><div class="stat" id="segmentStat"><strong id="segmentCount">1 件</strong><span id="segmentUnit">模具零件</span></div></div>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end"><label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">模具做法<select id="toolingMode" style="width:auto;min-width:150px"><option value="printed">3D 列印葉片上翼面壓模</option><option value="blade">完整翼型葉片（直接列印）</option><option value="ribs">雷切翼肋骨架模（未完成）</option></select></label><div class="stat" id="segmentStat"><strong id="segmentCount">1 件</strong><span id="segmentUnit">模具零件</span></div></div>
           </div>
           <div class="airfoil-preview">
             <div class="airfoil-preview-head"><div><strong>NACA 2412 翼型截面</strong><div id="airfoilInfo" class="airfoil-preview-info"></div></div><label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">檢視站位<select id="airfoilStation" style="width:auto;min-width:110px"></select></label></div>
