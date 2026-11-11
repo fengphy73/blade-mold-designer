@@ -6,13 +6,48 @@ import { buildBlade, bladePlans, thickenedSurfaces, unrotateBlade } from '../js/
 import { meshToStl } from '../js/stl.js';
 
 const config = validateConfig(defaultConfig());
-const joint = effectiveJoint(config);
 const segments = config.printableSegments;
-console.log('segments', segments.length, segments.map(s => `${s.start.toFixed(1)}-${s.end.toFixed(1)}`).join(', '));
-console.log('joint', joint);
+console.log('default printer', config.printer, 'segments', segments.length, segments.map(s => `${s.start.toFixed(1)}-${s.end.toFixed(1)}`).join(', '));
 
-if (segments.length !== 2) {
-  console.error('FAIL: default parameters should produce 2 segments');
+if (config.printer !== 500 || segments.length !== 1 || segments[0].start !== 0 || segments[0].end !== 450) {
+  console.error('FAIL: default printer 500 should be one segment, 0–450 mm');
+  process.exit(1);
+}
+
+function boundsOf(mesh) {
+  const p = mesh.positions;
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (let i = 0; i < p.length; i += 3) {
+    minX = Math.min(minX, p[i]); maxX = Math.max(maxX, p[i]);
+    minY = Math.min(minY, p[i + 1]); maxY = Math.max(maxY, p[i + 1]);
+    minZ = Math.min(minZ, p[i + 2]); maxZ = Math.max(maxZ, p[i + 2]);
+  }
+  return { minX, maxX, minY, maxY, minZ, maxZ };
+}
+
+let failed = false;
+console.log('default mold (printer 500, one piece):');
+for (const kind of ['lower', 'upper']) {
+  const mesh = buildMold(config, 0, kind);
+  const analysis = meshAnalysis(mesh.positions, mesh.indices);
+  const b = boundsOf(mesh);
+  const name = kind === 'lower' ? 'lower-concave-mold-01.stl' : 'upper-convex-mold-01.stl';
+  console.log(JSON.stringify({
+    file: name, segments: 1, watertight: analysis.watertight,
+    openEdges: analysis.openEdges, nonManifoldEdges: analysis.nonManifoldEdges,
+    components: analysis.components, volume: +analysis.volume.toFixed(3),
+    bbox: `X ${b.minX.toFixed(2)}–${b.maxX.toFixed(2)} Y ${b.minY.toFixed(2)}–${b.maxY.toFixed(2)} Z ${b.minZ.toFixed(2)}–${b.maxZ.toFixed(2)}`
+  }));
+  if (!analysis.watertight || analysis.volume <= 0 || b.maxY > 450.05 || b.minY < -0.05) failed = true;
+}
+
+const splitConfig = validateConfig({ ...defaultConfig(), printer: 250 });
+const joint = effectiveJoint(splitConfig);
+const splitSegments = splitConfig.printableSegments;
+console.log('printer=250 segments', splitSegments.length, splitSegments.map(s => `${s.start.toFixed(1)}-${s.end.toFixed(1)}`).join(', '));
+console.log('joint', joint);
+if (splitSegments.length !== 2) {
+  console.error('FAIL: printer 250 should still split into 2 dovetail segments');
   process.exit(1);
 }
 
@@ -20,10 +55,9 @@ const outDir = new URL('../tmp-output/', import.meta.url);
 mkdirSync(outDir, { recursive: true });
 
 const parts = [];
-let failed = false;
-for (let i = 0; i < segments.length; i++) {
+for (let i = 0; i < splitSegments.length; i++) {
   for (const kind of ['lower', 'upper']) {
-    const mesh = buildMold(config, i, kind);
+    const mesh = buildMold(splitConfig, i, kind);
     const name = kind === 'lower' ? `lower-concave-mold-${String(i + 1).padStart(2, '0')}` : `upper-convex-mold-${String(i + 1).padStart(2, '0')}`;
     const analysis = meshAnalysis(mesh.positions, mesh.indices);
     const info = {
@@ -44,21 +78,21 @@ for (let i = 0; i < segments.length; i++) {
 }
 
 // Clearance: socket full width − tongue full width == 2 * per-side clearance, on the mesh walls.
-const seam = segments[0].end;
-const profile = seamProfile(joint, station(config, seam).chord);
+const seam = splitSegments[0].end;
+const profile = seamProfile(joint, station(splitConfig, seam).chord);
 profile.y0 = seam;
-const tongue = buildMold(config, 0, 'upper');
-const socket = buildMold(config, 1, 'upper');
+const tongue = buildMold(splitConfig, 0, 'upper');
+const socket = buildMold(splitConfig, 1, 'upper');
 const samples = [2, 4, 8, 12, 16].map(i => i / 18);
 console.log('\nClearance samples (upper molds, local chord width):');
 let clearanceOk = true;
 for (const t of samples) {
   const y = seam + t * joint.depth;
-  const chord = station(config, y).chord;
+  const chord = station(splitConfig, y).chord;
   const expectTongue = widthAt(profile, t, chord, 'tongue');
   const expectSocket = widthAt(profile, t, chord, 'socket');
-  const tw = measureWallWidth(config, tongue, y, 'tongue');
-  const sw = measureWallWidth(config, socket, y, 'socket');
+  const tw = measureWallWidth(splitConfig, tongue, y, 'tongue');
+  const sw = measureWallWidth(splitConfig, socket, y, 'socket');
   const delta = sw.width - tw.width;
   const row = {
     t, y: +y.toFixed(3),
@@ -87,7 +121,7 @@ if (used.clearance !== 0.4 || used.width !== 12 || used.depth !== 4 || used.angl
 } else console.log('advanced-off defaults OK', used);
 
 // Tongue and socket share one back plane at the seam (per-segment heights still mate).
-const socketMesh = buildMold(config, 1, 'upper');
+const socketMesh = buildMold(splitConfig, 1, 'upper');
 let tongueMin = Infinity;
 for (let i = 0; i < tongue.positions.length; i += 3) {
   if (tongue.positions[i + 1] > seam + 0.2) tongueMin = Math.min(tongueMin, tongue.positions[i + 2]);
@@ -100,7 +134,7 @@ if (mateDelta > 0.05) {
 }
 
 // M3 lugs stay fused into the same shell.
-const clamped = validateConfig({ ...defaultConfig(), clampEnabled: true });
+const clamped = validateConfig({ ...defaultConfig(), printer: 250, clampEnabled: true });
 for (let i = 0; i < 2; i++) {
   for (const kind of ['lower', 'upper']) {
     const mesh = buildMold(clamped, i, kind);
@@ -163,8 +197,8 @@ if (longSegs.length !== 1 || longSegs[0].start !== 0 || longSegs[0].end !== 450)
   }
 }
 
-failed = checkPrintedBlades(config, 250) || failed;
-failed = checkPrintedBlades(longBed, 500) || failed;
+failed = checkPrintedBlades(splitConfig, 250) || failed;
+failed = checkPrintedBlades(config, 500) || failed;
 
 if (failed) {
   console.error('\nCHECK FAILED');

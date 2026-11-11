@@ -18,7 +18,7 @@ export function defaultConfig() {
   return {
     wood: 2,
     clearance: 0.2,
-    printer: 250,
+    printer: 500,
     jointClearance: 0.4,
     jointWidth: 12,
     jointDepth: 4,
