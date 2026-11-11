@@ -211,7 +211,7 @@ function applyToolingMode() {
     ribParamsSection: ribs,
     clampSection: printed,
     locatorSection: printed,
-    jointSection: printed
+    jointSection: !ribs
   };
   for (const [id, visible] of Object.entries(show)) $(id).hidden = !visible;
   $('twistAxisField').classList.toggle('wide', blade);
