@@ -196,9 +196,24 @@ function applyToolingMode() {
   const ribs = mode === 'ribs';
   const blade = mode === 'blade';
   $('intro').textContent = INTRO[mode] || INTRO.printed;
-  for (const id of ['woodField', 'clearanceField', 'moldMarginField', 'moldBackField', 'moldBackNote', 'rootPadSection', 'laserSvgNote', 'slitSection', 'ribParamsSection', 'clampSection', 'locatorSection', 'downloadSvg']) {
-    $(id).hidden = blade;
-  }
+  const printed = mode === 'printed';
+  const show = {
+    woodField: !blade,
+    clearanceField: !blade,
+    moldMarginField: !blade,
+    moldBackField: printed,
+    moldBackNote: printed,
+    printerField: !ribs,
+    rootPadSection: !blade,
+    laserSvgNote: !blade,
+    slitSection: !blade,
+    downloadSvg: !blade,
+    ribParamsSection: ribs,
+    clampSection: printed,
+    locatorSection: printed,
+    jointSection: printed
+  };
+  for (const [id, visible] of Object.entries(show)) $(id).hidden = !visible;
   $('twistAxisField').classList.toggle('wide', blade);
   $('previewSvg').hidden = ribs || blade;
   $('previewCaption').hidden = ribs || blade;
