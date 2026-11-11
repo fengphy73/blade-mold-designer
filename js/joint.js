@@ -1,40 +1,60 @@
 /**
  * One dovetail profile shared by the 2D diagram, the 3D preview and the STL.
  *
- * t = 0 is the tongue root (where it joins segment A): NARROW.
- * t = 1 is the tongue tip: WIDE.
+ * t = 0 is the tongue root (narrow); t = 1 is the tongue tip (wide).
  * The socket is the same curve widened by exactly 2 × per-side clearance.
+ * Head width and depth follow the seam chord (Bambu Studio style).
+ * The UI angle is the flank against the seam face; neckWidth uses the
+ * complement, the angle away from the span direction.
  *
- * Fillets:
- *  - root: circular flare into the shoulder (adds material; does not undercut the neck)
- *  - tip: circular round on the head corners (removes the sharp corner, head stays wider than the root)
- * The flank between them is the original smoothstep, narrow to wide.
+ * Fillets: root flares into the shoulder; tip rounds the head corners.
  */
-
-export const JOINT_DEFAULTS = Object.freeze({
-  clearance: 0.4,
-  width: 12,
-  depth: 4,
-  angle: 45
-});
-
-export function effectiveJoint(config) {
-  if (!config.jointManual) return { ...JOINT_DEFAULTS };
-  return {
-    clearance: config.jointClearance,
-    width: config.jointWidth,
-    depth: config.jointDepth,
-    angle: config.jointAngle
-  };
-}
 
 function clamp(x, a, b) {
   return Math.max(a, Math.min(b, x));
 }
 
-export function neckWidth(head, depth, angleDeg) {
-  const ang = angleDeg * Math.PI / 180;
-  return Math.max(1.5, head - 2 * depth * Math.tan(ang));
+export const JOINT_DEFAULTS = Object.freeze({
+  clearance: 0.1,
+  widthPercentMold: 55,
+  widthPercentBlade: 50,
+  depthPercent: 16,
+  faceAngle: 60
+});
+
+export function effectiveJoint(config, mode = 'mold') {
+  const blade = mode === 'blade';
+  if (!config.jointManual) {
+    return {
+      clearance: JOINT_DEFAULTS.clearance,
+      widthPercent: blade ? JOINT_DEFAULTS.widthPercentBlade : JOINT_DEFAULTS.widthPercentMold,
+      depthPercent: JOINT_DEFAULTS.depthPercent,
+      faceAngle: JOINT_DEFAULTS.faceAngle,
+      mode: blade ? 'blade' : 'mold'
+    };
+  }
+  return {
+    clearance: config.jointClearance,
+    widthPercent: config.jointWidth,
+    depthPercent: config.jointDepth,
+    faceAngle: config.jointAngle,
+    mode: blade ? 'blade' : 'mold'
+  };
+}
+
+/** Spanwise dovetail depth in mm, 16% of the seam chord, clamped to 6–15 mm. */
+export function jointDepthMm(chord, joint) {
+  return clamp(chord * joint.depthPercent / 100, 6, 15);
+}
+
+/** Angle of the flank away from the span axis. UI face-angle 60° → 30°. */
+export function internalFlankAngle(faceAngle) {
+  return 90 - faceAngle;
+}
+
+export function neckWidth(head, depth, internalAngleDeg) {
+  const raw = head - 2 * depth * Math.tan(internalAngleDeg * Math.PI / 180);
+  return Math.max(head * 0.3, raw);
 }
 
 export function filletRadii(neck, head, depth) {
@@ -44,10 +64,6 @@ export function filletRadii(neck, head, depth) {
   return { rTip, rRoot };
 }
 
-/**
- * Full tongue width at fraction t.
- * `neck` is fixed at the seam; `head` may follow the local chord.
- */
 export function tongueWidth(t, neck, head, depth, radii) {
   const tt = clamp(t, 0, 1);
   const s = tt * tt * (3 - 2 * tt);
@@ -68,36 +84,43 @@ export function tongueWidth(t, neck, head, depth, radii) {
   return Math.max(0.8, w);
 }
 
-export function socketWidth(t, neck, head, depth, clearance, radii) {
-  return tongueWidth(t, neck, head, depth, radii) + 2 * clearance;
-}
-
-/** Head width allowed by the local chord, same rule as the original (chord − 2 mm). */
-export function headAtChord(joint, chord) {
-  return Math.min(joint.width, Math.max(2, chord - 2));
-}
-
 /**
- * Profile parameters locked at a seam so tongue and socket share one definition.
- * Width still follows the local chord's head, but neck and fillet radii stay fixed.
+ * Profile locked to one seam chord so the tongue and the socket match.
+ * Mold: head centered at mid-chord. Blade: head centered at 40% chord
+ * (spans 15%–65% when the width is 50%).
  */
 export function seamProfile(joint, chordAtSeam) {
-  const head = headAtChord(joint, chordAtSeam);
-  const neck = neckWidth(head, joint.depth, joint.angle);
-  const radii = filletRadii(neck, head, joint.depth);
-  return { joint, head, neck, radii, chordAtSeam };
+  const head = chordAtSeam * joint.widthPercent / 100;
+  const depth = jointDepthMm(chordAtSeam, joint);
+  const internalAngle = internalFlankAngle(joint.faceAngle);
+  const neck = neckWidth(head, depth, internalAngle);
+  const radii = filletRadii(neck, head, depth);
+  const centerFraction = joint.mode === 'blade' ? 0.4 : 0.5;
+  return {
+    joint,
+    head,
+    neck,
+    depth,
+    radii,
+    chord: chordAtSeam,
+    center: chordAtSeam * centerFraction,
+    centerFraction,
+    faceAngle: joint.faceAngle,
+    internalAngle,
+    clearance: joint.clearance
+  };
 }
 
-export function widthAt(profile, t, chordHere, kind) {
-  const head = headAtChord(profile.joint, chordHere);
-  const tongue = tongueWidth(t, profile.neck, head, profile.joint.depth, profile.radii);
-  if (kind === 'socket') return tongue + 2 * profile.joint.clearance;
+/** Tongue or socket full width at fraction t. Chord is already locked in the profile. */
+export function widthAt(profile, t, kind) {
+  const tongue = tongueWidth(t, profile.neck, profile.head, profile.depth, profile.radii);
+  if (kind === 'socket') return tongue + 2 * profile.clearance;
   return tongue;
 }
 
 /**
- * How wide the socket may be before it breaks out of the mold skin.
- * Returns the max full width, and whether the requested width had to be limited.
+ * Socket must leave at least `minWall` mm of mold skin on each side.
+ * Centered the same way as the mold joint (mid-chord).
  */
 export function limitJointWidth(requestedFullWidth, chord, margin, minWall = 2) {
   const center = chord / 2;
@@ -109,16 +132,20 @@ export function limitJointWidth(requestedFullWidth, chord, margin, minWall = 2) 
   return { width: maxFull, clamped: true, maxFull };
 }
 
-/** 2D outline in the chord (x) / span (y) plane, centered on `centerX`, y from 0 at the root to +depth at the tip. */
-export function profilePolyline(profile, chordSamples, kind, segments = 28) {
+export function profilePolyline(profile, kind, segments = 28) {
   const pts = [];
   for (let i = 0; i <= segments; i++) {
     const t = i / segments;
-    const chord = chordSamples(t);
-    const half = widthAt(profile, t, chord, kind) / 2;
-    const center = chord / 2;
-    const y = t * profile.joint.depth;
-    pts.push({ t, y, xL: center - half, xR: center + half, width: half * 2, center });
+    const width = widthAt(profile, t, kind);
+    const half = width / 2;
+    pts.push({
+      t,
+      y: t * profile.depth,
+      xL: profile.center - half,
+      xR: profile.center + half,
+      width,
+      center: profile.center
+    });
   }
   return pts;
 }

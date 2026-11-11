@@ -3,7 +3,7 @@
  * Each segment is one closed shell: body, dovetail, locating lip and M3 lugs share vertices.
  */
 import { clamp, interp, smoothstep, station, transformed, faceLocalZ, fenceStartY, faceEnvelope } from './model.js';
-import { effectiveJoint, seamProfile, widthAt, limitJointWidth } from './joint.js';
+import { effectiveJoint, jointDepthMm, seamProfile, widthAt, limitJointWidth } from './joint.js';
 
 const MID = 24;
 const KL = 8;
@@ -276,19 +276,18 @@ function buildXList(c, y, kind, split, centers) {
   return { xs, iL, iR, chord, ear };
 }
 
-function jointEdgesAt(c, y, profile, kind, chord) {
-  const center = chord / 2;
-  const t = kind === 'socket'
-    ? clamp((y - profile.y0) / profile.joint.depth, 0, 1)
-    : clamp((y - profile.y0) / profile.joint.depth, 0, 1);
-  let full = widthAt(profile, t, chord, kind === 'socket' ? 'socket' : 'tongue');
-  const limited = limitJointWidth(full, chord, c.moldMargin, 2.2);
-  full = limited.width;
+function jointEdgesAt(c, y, profile, kind) {
+  const chord = profile.chord;
+  const center = profile.center;
+  const t = clamp((y - profile.y0) / profile.depth, 0, 1);
+  const requested = widthAt(profile, t, kind === 'socket' ? 'socket' : 'tongue');
+  const limited = limitJointWidth(requested, chord, c.moldMargin, 2);
+  const full = limited.width;
   const half = full / 2;
   const x0 = -0.15, x1 = chord + 0.15;
   const xL = clamp(center - half, x0 + 0.4, center - 0.6);
   const xR = clamp(center + half, center + 0.6, x1 - 0.4);
-  return { xL, xR, full, requested: widthAt(profile, t, chord, kind === 'socket' ? 'socket' : 'tongue'), clamped: limited.clamped || Math.abs((xR - xL) - full) > 1e-3, center };
+  return { xL, xR, full, requested, clamped: limited.clamped || Math.abs((xR - xL) - full) > 1e-3, center };
 }
 
 /**
@@ -296,29 +295,24 @@ function jointEdgesAt(c, y, profile, kind, chord) {
  * The actual void / tongue uses the true profile; this only places vertex columns.
  */
 function spacingSplit(c, y, seg, tongueProfile, socketProfile) {
-  const chord = station(c, y).chord;
-  const depth = (tongueProfile || socketProfile).joint.depth;
-  let half = null;
-  if (seg.hasStart && y <= seg.start + depth + 1e-9) {
-    const edges = jointEdgesAt(c, y, socketProfile, 'socket', chord);
+  const startDepth = socketProfile ? socketProfile.depth : 0;
+  if (seg.hasStart && y <= seg.start + startDepth + 1e-9) {
+    const edges = jointEdgesAt(c, y, socketProfile, 'socket');
     return { xL: edges.xL, xR: edges.xR, clamped: edges.clamped };
   }
   if (seg.hasStart && seg.hasEnd) {
-    const a = jointEdgesAt(c, seg.start + depth, socketProfile, 'socket', station(c, seg.start + depth).chord);
-    const b = jointEdgesAt(c, seg.end, tongueProfile, 'tongue', station(c, seg.end).chord);
-    const t = clamp((y - (seg.start + depth)) / Math.max(1e-6, seg.end - (seg.start + depth)), 0, 1);
+    const a = jointEdgesAt(c, seg.start + startDepth, socketProfile, 'socket');
+    const b = jointEdgesAt(c, seg.end, tongueProfile, 'tongue');
+    const t = clamp((y - (seg.start + startDepth)) / Math.max(1e-6, seg.end - (seg.start + startDepth)), 0, 1);
     const s = smoothstep(t);
     return { xL: interp(a.xL, b.xL, s), xR: interp(a.xR, b.xR, s), clamped: a.clamped || b.clamped };
   }
   if (seg.hasEnd) {
-    const edges = jointEdgesAt(c, seg.end, tongueProfile, 'tongue', station(c, seg.end).chord);
-    // Keep the root spacing on the body so the tongue root meets these columns.
-    // Along the tongue itself the caller passes the true t.
-    if (y >= seg.end - 1e-9) return { xL: edges.xL, xR: edges.xR, clamped: edges.clamped };
+    const edges = jointEdgesAt(c, seg.end, tongueProfile, 'tongue');
     return { xL: edges.xL, xR: edges.xR, clamped: edges.clamped };
   }
   if (seg.hasStart) {
-    const edges = jointEdgesAt(c, seg.start + depth, socketProfile, 'socket', station(c, seg.start + depth).chord);
+    const edges = jointEdgesAt(c, seg.start + startDepth, socketProfile, 'socket');
     return { xL: edges.xL, xR: edges.xR, clamped: edges.clamped };
   }
   return null;
@@ -480,7 +474,7 @@ function segmentPlans(c) {
     const hasStart = split && index > 0;
     const hasEnd = split && index < segs.length - 1;
     const yTongue0 = seg.end;
-    const yTongue1 = seg.end + (hasEnd ? joint.depth : 0);
+    const yTongue1 = seg.end + (hasEnd ? jointDepthMm(station(c, seg.end).chord, joint) : 0);
     const maleEnv = faceEnvelope(c, seg.start, seg.end, 'upper');
     const femaleEnv = faceEnvelope(c, seg.start, seg.end, 'lower');
     // Tongue lives in the next segment's span; include it so the back clears the tongue face.
@@ -512,13 +506,13 @@ function segmentPlans(c) {
   });
 }
 
-function backAt(kind, y, seg, plans, c, joint) {
+function backAt(kind, y, seg, plans, c) {
   const mine = kind === 'upper' ? seg.male : seg.female;
   const own = kind === 'upper' ? mine.ownBase : mine.ownCap;
   if (!seg.hasEnd) return own;
   const next = plans[seg.index + 1];
   const nextPlane = kind === 'upper' ? next.male.ownBase : next.female.ownCap;
-  const depth = joint.depth;
+  const depth = seg.hasStart ? jointDepthMm(station(c, seg.start).chord, effectiveJoint(c, 'mold')) : 0;
   const trans = Math.min(36, Math.max(14, (seg.end - seg.start) * 0.12));
   let y0 = seg.end - trans;
   if (seg.hasStart) y0 = Math.max(y0, seg.start + depth + 2);
@@ -528,7 +522,7 @@ function backAt(kind, y, seg, plans, c, joint) {
 }
 
 function profileFor(c, seamY) {
-  const joint = effectiveJoint(c);
+  const joint = effectiveJoint(c, 'mold');
   const chord = station(c, seamY).chord;
   const profile = seamProfile(joint, chord);
   profile.y0 = seamY;
@@ -542,21 +536,22 @@ function profileFor(c, seamY) {
 export function buildSegmentMesh(c, segmentIndex, kind) {
   const plans = segmentPlans(c);
   const seg = plans[segmentIndex];
-  const joint = effectiveJoint(c);
   const mesh = new MeshBuilder();
   const warnings = [];
   const hasJoint = seg.hasStart || seg.hasEnd;
   const socketProfile = seg.hasStart ? profileFor(c, seg.start) : null;
   const tongueProfile = seg.hasEnd ? profileFor(c, seg.end) : null;
+  const startDepth = socketProfile ? socketProfile.depth : 0;
+  const endDepth = tongueProfile ? tongueProfile.depth : 0;
 
   const centers = c.clampEnabled ? lugCenters(seg) : null;
-  const ys = collectYs(c, seg, joint.depth);
+  const ys = collectYs(c, seg, startDepth);
   let clamped = false;
   const rows = ys.map(y => {
     const split = hasJoint ? spacingSplit(c, y, seg, tongueProfile, socketProfile) : null;
     if (split?.clamped) clamped = true;
     // Plane first, then push it clear of this row's samples while keeping the seam value exact.
-    let plane = backAt(kind === 'lower' ? 'lower' : 'upper', y, seg, plans, c, joint);
+    let plane = backAt(kind === 'lower' ? 'lower' : 'upper', y, seg, plans, c);
     const probe = buildXList(c, y, kind, split, centers);
     let minZ = Infinity, maxZ = -Infinity;
     for (const s of probe.xs) {
@@ -579,8 +574,7 @@ export function buildSegmentMesh(c, segmentIndex, kind) {
 
   const iL = rows[0].iL;
   const iR = rows[0].iR;
-  const depth = joint.depth;
-  const voidTest = (ya, yb) => seg.hasStart && (ya + yb) / 2 < seg.start + depth - 1e-6;
+  const voidTest = (ya, yb) => seg.hasStart && (ya + yb) / 2 < seg.start + startDepth - 1e-6;
   loftRows(mesh, rows, iL, iR, voidTest);
 
   if (!seg.hasStart) capStrip(mesh, rows[0].surf, rows[0].back);
@@ -592,7 +586,7 @@ export function buildSegmentMesh(c, segmentIndex, kind) {
   // Socket end wall on the row that sits at start+depth.
   if (seg.hasStart) {
     let endRow = rows[0];
-    for (const row of rows) if (Math.abs(row.y - (seg.start + depth)) < 1e-3) endRow = row;
+    for (const row of rows) if (Math.abs(row.y - (seg.start + startDepth)) < 1e-3) endRow = row;
     capStrip(mesh, endRow.surf.slice(iL, iR + 1), endRow.back.slice(iL, iR + 1));
   }
 
@@ -607,9 +601,8 @@ export function buildSegmentMesh(c, segmentIndex, kind) {
     const plane = kind === 'upper' ? next.male.ownBase : next.female.ownCap;
     // Force the body end plane to the mating plane. Rebuild is unnecessary if backAt already
     // returns it; the tongue uses `plane` exactly so the socket (next.own) matches.
-    for (const y of tongueYs(seg.end, depth)) {
-      const chord = station(c, y).chord;
-      const edges = jointEdgesAt(c, y, tongueProfile, 'tongue', chord);
+    for (const y of tongueYs(seg.end, endDepth)) {
+      const edges = jointEdgesAt(c, y, tongueProfile, 'tongue');
       if (edges.clamped) clamped = true;
       tRows.push(makeRow(mesh, c, y, kind, { xL: edges.xL, xR: edges.xR }, plane, centers));
     }
@@ -628,7 +621,7 @@ export function buildSegmentMesh(c, segmentIndex, kind) {
   }
 
   if (clamped) {
-    warnings.push('鳩尾凹槽在這個間隙下會穿出模具外皮，已限制寬度。請減小單側間隙或頭部寬度。');
+    warnings.push('鳩尾凹槽在這個間隙下會穿出模具外皮，已限制寬度。請減小單側間隙或鳩尾寬度百分比。');
   }
 
   const built = finalizeMesh(mesh.pos, mesh.idx);

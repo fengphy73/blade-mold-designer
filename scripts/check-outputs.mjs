@@ -1,6 +1,6 @@
 import { writeFileSync, mkdirSync } from 'fs';
 import { defaultConfig, validateConfig, worldToLocal, station, rawStation } from '../js/model.js';
-import { effectiveJoint, seamProfile, widthAt } from '../js/joint.js';
+import { effectiveJoint, seamProfile, widthAt, jointDepthMm } from '../js/joint.js';
 import { buildMold, meshAnalysis } from '../js/mesh.js';
 import { buildBlade, bladePlans, thickenedSurfaces, unrotateBlade } from '../js/blade.js';
 import { meshToStl } from '../js/stl.js';
@@ -60,6 +60,8 @@ for (let i = 0; i < splitSegments.length; i++) {
     const mesh = buildMold(splitConfig, i, kind);
     const name = kind === 'lower' ? `lower-concave-mold-${String(i + 1).padStart(2, '0')}` : `upper-convex-mold-${String(i + 1).padStart(2, '0')}`;
     const analysis = meshAnalysis(mesh.positions, mesh.indices);
+    const b = boundsOf(mesh);
+    const span = b.maxY - b.minY;
     const info = {
       file: `${name}.stl`,
       kind,
@@ -67,12 +69,19 @@ for (let i = 0; i < splitSegments.length; i++) {
       height: mesh.height,
       minZ: mesh.minZ,
       maxZ: mesh.maxZ,
+      bbox: `X ${b.minX.toFixed(2)}–${b.maxX.toFixed(2)} Y ${b.minY.toFixed(2)}–${b.maxY.toFixed(2)} Z ${b.minZ.toFixed(2)}–${b.maxZ.toFixed(2)}`,
+      spanY: +span.toFixed(2),
+      fitsPrinter: span <= splitConfig.printer + 0.05,
       ...analysis,
       warnings: mesh.warnings
     };
     parts.push(info);
     console.log(JSON.stringify(info, null, 0));
     if (!analysis.watertight) failed = true;
+    if (span > splitConfig.printer + 0.05) {
+      console.error(`FAIL: mold segment ${i + 1} ${kind} is ${span.toFixed(2)} mm, longer than printer ${splitConfig.printer}`);
+      failed = true;
+    }
     writeFileSync(new URL(info.file, outDir), Buffer.from(meshToStl(mesh, name)));
   }
 }
@@ -87,10 +96,9 @@ const samples = [2, 4, 8, 12, 16].map(i => i / 18);
 console.log('\nClearance samples (upper molds, local chord width):');
 let clearanceOk = true;
 for (const t of samples) {
-  const y = seam + t * joint.depth;
-  const chord = station(splitConfig, y).chord;
-  const expectTongue = widthAt(profile, t, chord, 'tongue');
-  const expectSocket = widthAt(profile, t, chord, 'socket');
+  const y = seam + t * profile.depth;
+  const expectTongue = widthAt(profile, t, 'tongue');
+  const expectSocket = widthAt(profile, t, 'socket');
   const tw = measureWallWidth(splitConfig, tongue, y, 'tongue');
   const sw = measureWallWidth(splitConfig, socket, y, 'socket');
   const delta = sw.width - tw.width;
@@ -114,11 +122,13 @@ if (!clearanceOk) failed = true;
 
 // Manual values must be ignored when the advanced option is off.
 const custom = validateConfig({ ...defaultConfig(), jointManual: false, jointClearance: 1.2, jointWidth: 20, jointDepth: 6, jointAngle: 30 });
-const used = effectiveJoint(custom);
-if (used.clearance !== 0.4 || used.width !== 12 || used.depth !== 4 || used.angle !== 45) {
-  console.error('FAIL: advanced-off should keep recommended dovetail defaults');
+const used = effectiveJoint(custom, 'mold');
+const usedBlade = effectiveJoint(custom, 'blade');
+if (used.clearance !== 0.1 || used.widthPercent !== 55 || used.depthPercent !== 16 || used.faceAngle !== 60
+  || usedBlade.widthPercent !== 50) {
+  console.error('FAIL: advanced-off should keep recommended dovetail defaults', used, usedBlade);
   failed = true;
-} else console.log('advanced-off defaults OK', used);
+} else console.log('advanced-off defaults OK', used, usedBlade);
 
 // Tongue and socket share one back plane at the seam (per-segment heights still mate).
 const socketMesh = buildMold(splitConfig, 1, 'upper');
@@ -197,8 +207,54 @@ if (longSegs.length !== 1 || longSegs[0].start !== 0 || longSegs[0].end !== 450)
   }
 }
 
+reportSeams('mold printer=250', splitConfig, 'mold');
+reportSeams('blade printer=250', splitConfig, 'blade');
 failed = checkPrintedBlades(splitConfig, 250) || failed;
 failed = checkPrintedBlades(config, 500) || failed;
+
+function reportSeams(label, c, mode) {
+  const joint = effectiveJoint(c, mode);
+  const segs = c.printableSegments;
+  console.log(`\n${label}`);
+  if (segs.length < 2) {
+    console.log('one piece, no seam');
+    return;
+  }
+  for (let i = 0; i < segs.length - 1; i++) {
+    const y = segs[i].end;
+    const chord = (mode === 'blade' ? rawStation : station)(c, y).chord;
+    const profile = seamProfile(joint, chord);
+    const body = segs[i].end - segs[i].start;
+    const row = {
+      seam: i + 1,
+      y: +y.toFixed(2),
+      chord: +chord.toFixed(2),
+      head: +profile.head.toFixed(2),
+      neck: +profile.neck.toFixed(2),
+      depth: +profile.depth.toFixed(2),
+      clearance: profile.clearance,
+      centerFraction: profile.centerFraction,
+      headFromLead: `${((profile.center - profile.head / 2) / chord * 100).toFixed(1)}%–${((profile.center + profile.head / 2) / chord * 100).toFixed(1)}%`,
+      bodyPlusTongue: +(body + profile.depth).toFixed(2),
+      printer: c.printer
+    };
+    if (mode === 'blade') {
+      const fit = bladePlans(c)[i].fit;
+      row.edgeThick = fit ? fit.edgeThick.map(v => +v.toFixed(2)) : null;
+      row.minAirfoilAtHead = fit ? +fit.minThick.toFixed(2) : null;
+      row.butt = !fit;
+    }
+    console.log(JSON.stringify(row));
+    if (body + jointDepthMm(chord, joint) > c.printer + 0.05) {
+      console.error('FAIL: segment with tongue exceeds printer');
+      failed = true;
+    }
+    if (profile.neck < profile.head * 0.3 - 1e-6) {
+      console.error('FAIL: neck narrower than 30% of head');
+      failed = true;
+    }
+  }
+}
 
 if (failed) {
   console.error('\nCHECK FAILED');
@@ -227,6 +283,7 @@ function checkPrintedBlades(c, printer) {
       twist: `${mesh.twistStart.toFixed(1)}→${mesh.twistEnd.toFixed(1)}`,
       size: `X ${(mesh.maxX - mesh.minX).toFixed(2)} Y ${(mesh.maxY - mesh.minY).toFixed(2)} Z ${mesh.height.toFixed(2)}`,
       y: `${mesh.minY.toFixed(2)}–${mesh.maxY.toFixed(2)}`,
+      fitsPrinter: (mesh.maxY - mesh.minY) <= printer + 0.05,
       openEdges: analysis.openEdges,
       nonManifoldEdges: analysis.nonManifoldEdges,
       components: analysis.components,
@@ -234,6 +291,10 @@ function checkPrintedBlades(c, printer) {
       watertight: analysis.watertight
     }));
     if (!analysis.watertight || analysis.volume <= 0 || analysis.components !== 1) bad = true;
+    if (mesh.maxY - mesh.minY > printer + 0.05) {
+      console.error(`FAIL: blade segment ${mesh.segmentIndex + 1} is ${(mesh.maxY - mesh.minY).toFixed(2)} mm, longer than printer ${printer}`);
+      bad = true;
+    }
   }
   let minTe = Infinity;
   for (const y of [0, 75, 150, 225, 300, 375, 450]) {
@@ -265,7 +326,7 @@ function checkPrintedBlades(c, printer) {
     const fit = bladePlans(c)[0].fit;
     for (const t of [0.2, 0.5, 0.8]) {
       const y = plans[0].end + t * fit.depth;
-      const expectT = widthAt(fit.profile, t, fit.chord, 'tongue') * fit.scale;
+      const expectT = widthAt(fit.profile, t, 'tongue') * fit.scale;
       const widthAtY = (mesh) => {
         const top = [];
         for (let i = 0; i < mesh.positions.length; i += 3) {
@@ -308,7 +369,7 @@ function measureWallWidth(config, mesh, y, role) {
   const chord = station(config, y).chord;
   const center = chord / 2;
   if (role === 'tongue') {
-    const near = locals.filter(x => Math.abs(x - center) < 30);
+    const near = locals.filter(x => Math.abs(x - center) < chord * 0.49);
     return { width: Math.max(...near) - Math.min(...near), n: near.length };
   }
   const xs = [...new Set(locals.map(x => Math.round(x * 500) / 500))].sort((a, b) => a - b);

@@ -1,5 +1,5 @@
 import { clamp, interp, smoothstep, upperY, upperSurfaceLengthRatio } from './airfoil.js';
-import { effectiveJoint } from './joint.js';
+import { effectiveJoint, jointDepthMm } from './joint.js';
 
 export { upperY, upperSurfaceLengthRatio, clamp, interp, smoothstep };
 
@@ -19,10 +19,10 @@ export function defaultConfig() {
     wood: 2,
     clearance: 0.2,
     printer: 500,
-    jointClearance: 0.4,
-    jointWidth: 12,
-    jointDepth: 4,
-    jointAngle: 45,
+    jointClearance: 0.1,
+    jointWidth: 55,
+    jointDepth: 16,
+    jointAngle: 60,
     rootPadLength: 30,
     rootBlendLength: 5,
     rootBarWidth: 6,
@@ -64,18 +64,34 @@ export function defaultConfig() {
   };
 }
 
+/**
+ * Equal pieces, then add pieces until every piece — tongue included — fits
+ * the printer. The tongue length is that seam's own depth (up to 15 mm).
+ */
 export function printableSegments(c) {
   const span = c.stations.at(-1).y;
-  const joint = effectiveJoint(c);
-  const jointAllowance = clamp(joint.depth, 1, 8);
-  let count = span <= c.printer ? 1 : Math.ceil(span / (c.printer - jointAllowance));
+  const joint = effectiveJoint(c, 'mold');
+  if (span <= c.printer + 1e-6) return [{ start: 0, end: span }];
+  let count = Math.ceil(span / Math.max(20, c.printer - 15));
+  const fits = (n) => {
+    const len = span / n;
+    for (let i = 0; i < n; i++) {
+      const start = i * len;
+      const end = i === n - 1 ? span : (i + 1) * len;
+      const body = end - start;
+      if (body <= 12) return false;
+      if (i < n - 1) {
+        const tongue = jointDepthMm(rawStation(c, end).chord, joint);
+        if (body + tongue > c.printer + 1e-4) return false;
+      }
+    }
+    return true;
+  };
+  while (!fits(count)) {
+    count += 1;
+    if (count > 48) throw new Error('自動拆件後含凸舌的零件仍超過列印長度；請加大列印機可用長度或縮短葉片。');
+  }
   const len = span / count;
-  if (count > 1 && len <= 12) {
-    throw new Error('自動拆件後的零件太短，無法保留接縫定位面；請增加列印長度或縮短葉片。');
-  }
-  if (count > 1 && len <= jointAllowance) {
-    throw new Error('列印段長度必須大於鳩尾接合深度。請加大列印機可用長度或減小接合深度。');
-  }
   return Array.from({ length: count }, (_, i) => ({
     start: i * len,
     end: i === count - 1 ? span : (i + 1) * len
@@ -121,13 +137,14 @@ export function validateConfig(input) {
   if (c.locatorEnabled && Math.max(0, c.stopHeight - (c.wood + c.clearance - 0.3)) > c.moldBackThickness - 1.5) {
     throw new Error(`擋邊太高：上模退讓後背板至少要留 1.5 mm；目前最高可設 ${(c.wood + c.clearance - 0.3 + c.moldBackThickness - 1.5).toFixed(1)} mm。`);
   }
-  const joint = effectiveJoint(c);
+  const joint = effectiveJoint(c, 'mold');
   if (c.jointManual) {
-    if (c.jointClearance < 0.1 || c.jointClearance > 3 || c.jointWidth < 6 || c.jointWidth > 24 || c.jointDepth < 1 || c.jointDepth > 8 || c.jointAngle < 25 || c.jointAngle > 60) {
-      throw new Error('請檢查分段定位面的間隙、寬度、深度與斜面角度。');
-    }
+    if (!(c.jointClearance >= 0.05 && c.jointClearance <= 3)) throw new Error('單側間隙請設定在 0.05–3.0 mm。');
+    if (!(c.jointWidth >= 20 && c.jointWidth <= 80)) throw new Error('鳩尾寬度請設定在弦長的 20–80%。');
+    if (!(c.jointDepth >= 8 && c.jointDepth <= 40)) throw new Error('接合深度請設定在弦長的 8–40%。');
+    if (!(c.jointAngle >= 55 && c.jointAngle <= 80)) throw new Error('斜面與接縫面夾角請設定在 55–80°。');
   }
-  if (!(c.printer > joint.depth)) throw new Error('列印機可用長度必須大於鳩尾接合深度。');
+  if (!(c.printer > 15)) throw new Error('列印機可用長度必須大於鳩尾最大深度 15 mm。');
   if (!Array.isArray(c.stations) || c.stations.length < 2) throw new Error('至少需要根部與尖端兩個站位。');
   if (c.stations[0].y !== 0) throw new Error('根部距離固定為 0 mm。');
   for (let i = 0; i < c.stations.length; i++) {
