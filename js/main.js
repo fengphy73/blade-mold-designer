@@ -167,10 +167,21 @@ function renderRibDownloads(c) {
   }
 }
 
+const INTRO = {
+  printed: '一組互補的上、下模夾住同一片巴沙木，壓出上翼面的弧度；模具只在超出列印長度時自動拆件。',
+  ribs: '依每個站位切出上、下翼肋剖面，插在底板上組成骨架模，用來壓製巴沙木葉片，不需要 3D 列印。',
+  blade: '依站位的弦長與扭角產生上下翼面完整的 NACA 2412 實心葉片，可直接 3D 列印；超出列印長度時自動分段，以鳩尾接合。'
+};
+
 function applyToolingMode() {
   const mode = $('toolingMode').value;
   const ribs = mode === 'ribs';
   const blade = mode === 'blade';
+  $('intro').textContent = INTRO[mode] || INTRO.printed;
+  for (const id of ['woodField', 'clearanceField', 'moldMarginField', 'moldBackField', 'moldBackNote', 'rootPadSection', 'laserSvgNote', 'slitSection', 'ribParamsSection', 'clampSection', 'locatorSection', 'downloadSvg']) {
+    $(id).hidden = blade;
+  }
+  $('twistAxisField').classList.toggle('wide', blade);
   $('previewSvg').hidden = ribs || blade;
   $('previewCaption').hidden = ribs || blade;
   $('ribPreview').hidden = !ribs;
@@ -189,7 +200,7 @@ function applyToolingMode() {
   $('partsDescription').textContent = ribs
     ? '每張翼肋 SVG 同一排版含上模具、下模具；弧形紅線由板件左側切到右側，切開後分成兩片。另輸出僅有兩側卡槽的底板 SVG；不再輸出中央卡槽或固定梁。'
     : blade
-      ? '每一段下載一個封閉的完整翼型 STL，檔名 blade-full-NN.stl。上下表面都是 NACA 2412，扭角與壓模相同。'
+      ? '每一段下載一個封閉的完整翼型 STL。'
       : 'STL 依實際列印零件下載；啟用葉根接合段時，下模只在橫條位置形成局部凹座，其他翼面維持 NACA 2412 形狀。雷切 SVG 並排輸出兩層葉片外形與短切線，單位 mm，比例 1:1。';
 }
 
