@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="輸入風機葉片尺寸，預覽 NACA 2412 上翼面配對壓模並匯出封閉的分段 STL。">
-  <title>風機葉片與壓模設計器 v1.2</title>
+  <title>風機葉片與壓模設計器 v1.2.1</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -17,7 +17,7 @@
         <h1>風機葉片與壓模設計器</h1>
         <p class="intro" id="intro">一組互補的上、下模夾住同一片巴沙木，壓出上翼面的弧度；模具只在超出列印長度時自動拆件。</p>
       </div>
-      <div class="tag">NACA 2412 · PLA+ 原型模具 · v1.2</div>
+      <div class="tag">NACA 2412 · PLA+ 原型模具 · v1.2.1</div>
     </header>
 
     <div class="layout">
@@ -45,7 +45,7 @@
           <h3>葉根舌片接合段</h3>
           <p>在靠近輪鼓的葉根，把整個翼型截面壓成固定角度的平面段，供舌片接合；外側再平順過渡回翼型。</p>
           <div class="root-values">
-            <label class="root-toggle"><input id="rootPadEnabled" type="checkbox"><span>加入橫桿黏接平台（平面接合段）</span></label>
+            <label class="root-toggle"><input id="rootPadEnabled" type="checkbox" checked><span>加入橫桿黏接平台（平面接合段）</span></label>
             <label><span class="field-title">平面段長度 <span class="unit">mm</span></span><input id="rootPadLength" type="number" min="0" max="200" step="1" value="30"></label>
             <label><span class="field-title">過渡段長度 <span class="unit">mm</span></span><input id="rootBlendLength" type="number" min="5" max="200" step="1" value="5"></label>
             <label><span class="field-title">橫條沿葉片方向寬度 <span class="unit">mm</span></span><input id="rootBarWidth" type="number" min="2" max="25" step="0.5" value="6"></label>

@@ -52,7 +52,7 @@ export function defaultConfig() {
     ribSlotClearance: 0.2,
     ribSheetWidth: 600,
     ribSheetHeight: 400,
-    rootPadEnabled: false,
+    rootPadEnabled: true,
     clampEnabled: false,
     locatorEnabled: true,
     jointManual: false,
