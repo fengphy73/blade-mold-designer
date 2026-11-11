@@ -91,7 +91,7 @@ export function validateConfig(input) {
   for (const id of ids) num(c[id], id);
   if (!(c.wood >= 0.5 && c.wood <= 5)) throw new Error('木片厚度請設定在 0.5–5 mm。');
   if (!(c.clearance >= 0 && c.clearance <= 1)) throw new Error('模具間隙請設定在 0–1 mm。');
-  if (!(c.printer >= 80 && c.printer <= 250)) throw new Error('列印機可用長度請設定在 80–250 mm。');
+  if (!(c.printer >= 80)) throw new Error('列印機可用長度請設定在 80 mm 以上。');
   if (c.ribStockThickness <= 0 || c.ribSpacing < 3 || c.ribTabWidth <= 0 || c.ribSlotClearance < 0 || c.ribSheetWidth < 100 || c.ribSheetHeight < 100) {
     throw new Error('請檢查雷切翼肋板厚、間距、外側卡榫、配合間隙與排版尺寸。');
   }

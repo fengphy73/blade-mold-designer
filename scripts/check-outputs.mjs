@@ -129,6 +129,39 @@ if (onePiece.printableSegments.length !== 1) {
   if (!analysis.watertight || maxY > 180.05) failed = true;
 }
 
+// printer=500 fits the default 450 mm blade in one piece, with no dovetail.
+const longBed = validateConfig({ ...defaultConfig(), printer: 500 });
+const longSegs = longBed.printableSegments;
+console.log('printer=500 segments', longSegs.length, longSegs.map(s => `${s.start.toFixed(1)}-${s.end.toFixed(1)}`).join(', '));
+if (longSegs.length !== 1 || longSegs[0].start !== 0 || longSegs[0].end !== 450) {
+  console.error('FAIL: printer=500 with default stations should be one segment, 0–450 mm');
+  failed = true;
+} else {
+  for (const kind of ['lower', 'upper']) {
+    const mesh = buildMold(longBed, 0, kind);
+    const analysis = meshAnalysis(mesh.positions, mesh.indices);
+    let minY = Infinity, maxY = -Infinity;
+    for (let i = 1; i < mesh.positions.length; i += 3) {
+      minY = Math.min(minY, mesh.positions[i]);
+      maxY = Math.max(maxY, mesh.positions[i]);
+    }
+    console.log(JSON.stringify({
+      printer: 500,
+      kind,
+      height: +mesh.height.toFixed(3),
+      minZ: +mesh.minZ.toFixed(3),
+      maxZ: +mesh.maxZ.toFixed(3),
+      minY: +minY.toFixed(3),
+      maxY: +maxY.toFixed(3),
+      openEdges: analysis.openEdges,
+      nonManifoldEdges: analysis.nonManifoldEdges,
+      volume: +analysis.volume.toFixed(3),
+      watertight: analysis.watertight
+    }));
+    if (!analysis.watertight || analysis.volume <= 0 || maxY > 450.05 || minY < -0.05) failed = true;
+  }
+}
+
 if (failed) {
   console.error('\nCHECK FAILED');
   process.exit(1);
