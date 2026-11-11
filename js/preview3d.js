@@ -63,33 +63,35 @@ function geometryFromMesh(mesh) {
   return geo;
 }
 
-export function updatePreview3d(c, molds) {
+export function updatePreview3d(c, meshes, mode = 'printed') {
   const box = document.getElementById('preview3dToggles');
   const note = document.getElementById('preview3dNote');
+  const bladeMode = mode === 'blade';
   const segs = c.printableSegments;
-  // Rebuild toggles if the segment count changed.
-  if (box.childElementCount !== segs.length * 2) {
+  const toggleKey = `${mode}:${segs.length}`;
+  if (box.dataset.key !== toggleKey) {
+    box.dataset.key = toggleKey;
     box.innerHTML = '';
     visible.clear();
-    segs.forEach((seg, i) => {
-      for (const kind of ['lower', 'upper']) {
-        const id = key(i, kind);
-        visible.set(id, true);
-        const label = document.createElement('label');
-        label.className = 'toggle-chip';
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.checked = true;
-        input.dataset.part = id;
-        input.addEventListener('change', () => {
-          visible.set(id, input.checked);
-          const obj = scene.getObjectByName(id);
-          if (obj) obj.visible = input.checked;
-        });
-        const name = kind === 'lower' ? '下模凹面' : '上模凸面';
-        label.append(input, document.createTextNode(`第 ${i + 1} 段 ${name}`));
-        box.append(label);
-      }
+    const addToggle = (id, text) => {
+      visible.set(id, true);
+      const label = document.createElement('label');
+      label.className = 'toggle-chip';
+      const input = document.createElement('input');
+      input.type = 'checkbox';
+      input.checked = true;
+      input.addEventListener('change', () => {
+        visible.set(id, input.checked);
+        const obj = scene.getObjectByName(id);
+        if (obj) obj.visible = input.checked;
+      });
+      label.append(input, document.createTextNode(text));
+      box.append(label);
+    };
+    if (bladeMode) segs.forEach((_, i) => addToggle(`blade:${i}`, `第 ${i + 1} 段葉片`));
+    else segs.forEach((_, i) => {
+      addToggle(key(i, 'lower'), `第 ${i + 1} 段 下模凹面`);
+      addToggle(key(i, 'upper'), `第 ${i + 1} 段 上模凸面`);
     });
   }
   // Drop previous molds but keep lights and grid.
@@ -99,56 +101,63 @@ export function updatePreview3d(c, molds) {
   const warnings = [];
   let min = new THREE.Vector3(Infinity, Infinity, Infinity);
   let max = new THREE.Vector3(-Infinity, -Infinity, -Infinity);
-  segs.forEach((seg, i) => {
-    for (const kind of ['lower', 'upper']) {
-      const mesh = molds.find(m => m.segmentIndex === i && m.kind === kind) || buildMold(c, i, kind);
-      warnings.push(...mesh.warnings);
-      const geo = geometryFromMesh(mesh);
-      const color = COLORS[kind][i % 2];
-      const mat = new THREE.MeshStandardMaterial({
-        color,
-        roughness: 0.62,
-        metalness: 0.04,
-        side: THREE.DoubleSide
-      });
-      const obj = new THREE.Mesh(geo, mat);
-      obj.name = key(i, kind);
-      // Display-only gap so the nested upper/lower molds can be seen apart.
-      // Exported STL coordinates are not shifted.
-      if (kind === 'upper') obj.position.z = 28;
-      obj.visible = visible.get(obj.name) !== false;
-      scene.add(obj);
-      geo.computeBoundingBox();
-      const b = geo.boundingBox.clone();
-      b.min.add(obj.position);
-      b.max.add(obj.position);
-      min.min(b.min);
-      max.max(b.max);
-    }
-  });
+  const place = (mesh, name, color, zLift) => {
+    warnings.push(...(mesh.warnings || []));
+    const geo = geometryFromMesh(mesh);
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.04, side: THREE.DoubleSide });
+    const obj = new THREE.Mesh(geo, mat);
+    obj.name = name;
+    obj.position.z = zLift;
+    obj.visible = visible.get(name) !== false;
+    scene.add(obj);
+    geo.computeBoundingBox();
+    const b = geo.boundingBox.clone();
+    b.min.add(obj.position);
+    b.max.add(obj.position);
+    min.min(b.min);
+    max.max(b.max);
+  };
+  if (bladeMode) {
+    meshes.forEach((mesh, i) => place(mesh, `blade:${i}`, i % 2 ? 0xc4965a : 0x3f7d64, 0));
+  } else {
+    segs.forEach((seg, i) => {
+      for (const kind of ['lower', 'upper']) {
+        const mesh = meshes.find(m => m.segmentIndex === i && m.kind === kind) || buildMold(c, i, kind);
+        place(mesh, key(i, kind), COLORS[kind][i % 2], kind === 'upper' ? 28 : 0);
+      }
+    });
+  }
   const center = min.clone().add(max).multiplyScalar(0.5);
   controls.target.copy(center);
   const size = Math.max(80, max.clone().sub(min).length());
   camera.near = Math.max(0.5, size / 400);
   camera.far = size * 12;
   camera.updateProjectionMatrix();
-  if (!builtFor || builtFor !== segs.length) {
+  const frameKey = toggleKey;
+  if (!builtFor || builtFor !== frameKey) {
     const dist = size * 1.45;
     camera.position.copy(center).add(new THREE.Vector3(dist * 0.62, -dist * 0.78, dist * 0.38));
     controls.update();
-    builtFor = segs.length;
+    builtFor = frameKey;
   }
   const unique = [...new Set(warnings)];
   if (note) {
     note.hidden = unique.length === 0;
     note.textContent = unique.join(' ');
   }
-  const heights = segs.map((seg, i) => {
-    const upper = scene.getObjectByName(key(i, 'upper'));
-    upper.geometry.computeBoundingBox();
-    const box3 = upper.geometry.boundingBox;
-    return `第 ${i + 1} 段上模高 ${(box3.max.z - box3.min.z).toFixed(1)} mm`;
-  });
   const info = document.getElementById('preview3dInfo');
-  if (info) info.textContent = `實體預覽與 STL 同一網格。${heights.join('，')}。上模在畫面中上移 28 mm，方便看清模面；下載檔不含這段位移。`;
+  if (info) {
+    if (bladeMode) {
+      const bits = meshes.map((mesh, i) => `第 ${i + 1} 段高 ${mesh.height.toFixed(1)} mm`);
+      info.textContent = `實體預覽與 blade-full STL 同一網格。${bits.join('，')}。葉片平放：長度沿 Y、前緣在 x 較小側、最低點貼齊 z=0，根部弦線與列印床平行。`;
+    } else {
+      const heights = segs.map((seg, i) => {
+        const upper = scene.getObjectByName(key(i, 'upper'));
+        upper.geometry.computeBoundingBox();
+        const box3 = upper.geometry.boundingBox;
+        return `第 ${i + 1} 段上模高 ${(box3.max.z - box3.min.z).toFixed(1)} mm`;
+      });
+      info.textContent = `實體預覽與 STL 同一網格。${heights.join('，')}。上模在畫面中上移 28 mm，方便看清模面；下載檔不含這段位移。`;
+    }
+  }
 }

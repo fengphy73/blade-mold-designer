@@ -59,6 +59,7 @@ export function defaultConfig() {
     autoSlitDensity: true,
     slitPattern1: 'staggered',
     slitPattern2: 'staggered',
+    teMinThickness: 1.2,
     stations: DEFAULT_STATIONS.map(s => ({ ...s }))
   };
 }
@@ -87,11 +88,12 @@ export function validateConfig(input) {
     if (!Number.isFinite(v)) throw new Error(`請檢查數字欄位（${name}）。`);
     return v;
   };
-  const ids = ['wood', 'clearance', 'printer', 'jointClearance', 'jointWidth', 'jointDepth', 'jointAngle', 'rootPadLength', 'rootBlendLength', 'rootBarWidth', 'rootBarThickness', 'rootBarPosition', 'rootBarClearance', 'moldMargin', 'moldBackThickness', 'stopHeight', 'cornerRadius', 'slitLength', 'slitPitch1', 'slitPitch2', 'slitGap', 'twistPerRow', 'minSlitPitch', 'slitPitchScale', 'twistAxis', 'slitAngle', 'slitStagger', 'chordSlitPitch', 'slitRootKeep', 'slitEdgeKeep', 'ribStockThickness', 'ribSpacing', 'ribTabWidth', 'ribSlotClearance', 'ribSheetWidth', 'ribSheetHeight'];
+  const ids = ['wood', 'clearance', 'printer', 'jointClearance', 'jointWidth', 'jointDepth', 'jointAngle', 'rootPadLength', 'rootBlendLength', 'rootBarWidth', 'rootBarThickness', 'rootBarPosition', 'rootBarClearance', 'moldMargin', 'moldBackThickness', 'stopHeight', 'cornerRadius', 'slitLength', 'slitPitch1', 'slitPitch2', 'slitGap', 'twistPerRow', 'minSlitPitch', 'slitPitchScale', 'twistAxis', 'slitAngle', 'slitStagger', 'chordSlitPitch', 'slitRootKeep', 'slitEdgeKeep', 'ribStockThickness', 'ribSpacing', 'ribTabWidth', 'ribSlotClearance', 'ribSheetWidth', 'ribSheetHeight', 'teMinThickness'];
   for (const id of ids) num(c[id], id);
   if (!(c.wood >= 0.5 && c.wood <= 5)) throw new Error('木片厚度請設定在 0.5–5 mm。');
   if (!(c.clearance >= 0 && c.clearance <= 1)) throw new Error('模具間隙請設定在 0–1 mm。');
   if (!(c.printer >= 80)) throw new Error('列印機可用長度請設定在 80 mm 以上。');
+  if (!(c.teMinThickness >= 0.4 && c.teMinThickness <= 4)) throw new Error('後緣最小厚度請設定在 0.4–4 mm。');
   if (c.ribStockThickness <= 0 || c.ribSpacing < 3 || c.ribTabWidth <= 0 || c.ribSlotClearance < 0 || c.ribSheetWidth < 100 || c.ribSheetHeight < 100) {
     throw new Error('請檢查雷切翼肋板厚、間距、外側卡榫、配合間隙與排版尺寸。');
   }

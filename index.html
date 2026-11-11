@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="輸入風機葉片尺寸，預覽 NACA 2412 上翼面配對壓模並匯出封閉的分段 STL。">
-  <title>風機葉片上翼面壓模設計器 v1.0.1</title>
+  <title>風機葉片上翼面壓模設計器 v1.1</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -17,7 +17,7 @@
         <h1>風機葉片上翼面壓模設計器</h1>
         <p class="intro">一組互補的上、下模夾住同一片巴沙木，壓出上翼面的弧度。站位定義葉片形狀；模具只在超出列印長度時自動拆件。</p>
       </div>
-      <div class="tag">NACA 2412 · PLA+ 原型模具 · v1.0.1</div>
+      <div class="tag">NACA 2412 · PLA+ 原型模具 · v1.1</div>
     </header>
 
     <div class="layout">
@@ -139,7 +139,7 @@
         <section class="panel preview" aria-labelledby="preview-title">
           <div class="preview-head">
             <div><h2 id="preview-title">模具外形預覽</h2><p id="previewSubtitle">虛線是造型站位；只有超出列印長度的接縫才會拆開</p></div>
-            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end"><label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">模具做法<select id="toolingMode" style="width:auto;min-width:150px"><option value="printed">3D 列印上下模</option><option value="ribs">雷切翼肋骨架模</option></select></label><div class="stat" id="segmentStat"><strong id="segmentCount">1 件</strong>模具零件</div></div>
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;justify-content:flex-end"><label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">模具做法<select id="toolingMode" style="width:auto;min-width:150px"><option value="printed">3D 列印上下模</option><option value="blade">完整翼型葉片（直接列印）</option><option value="ribs">雷切翼肋骨架模</option></select></label><div class="stat" id="segmentStat"><strong id="segmentCount">1 件</strong><span id="segmentUnit">模具零件</span></div></div>
           </div>
           <div class="airfoil-preview">
             <div class="airfoil-preview-head"><div><strong>NACA 2412 翼型截面</strong><div id="airfoilInfo" class="airfoil-preview-info"></div></div><label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)">檢視站位<select id="airfoilStation" style="width:auto;min-width:110px"></select></label></div>
@@ -165,6 +165,15 @@
           <div class="parts-head"><div><h2 id="parts-title">輸出檔案</h2><p id="partsDescription">STL 依實際列印零件下載；啟用葉根接合段時，下模只在橫條位置形成局部凹座，其他翼面維持 NACA 2412 形狀。雷切 SVG 並排輸出兩層葉片外形與短切線，單位 mm，比例 1:1。</p></div><div class="actions"><button id="downloadSvg" type="button">下載雙層雷切 SVG</button><button id="saveParams" class="secondary" type="button">儲存參數</button><button id="loadParams" class="secondary" type="button">載入參數</button><input id="fileInput" type="file" accept="application/json" hidden></div></div>
           <div id="partList" class="part-list"></div>
           <p class="footer-note" id="printedFooter">雷切 SVG 只包含外輪廓與雙層短切線，沒有站位雷雕線。啟用平面接合段時，SVG 從平面段與過渡段結束處開始；模具仍按距圓心的完整葉片半徑生成。超出列印長度拆分時，STL 接縫包含全厚度鳩尾凸舌與配合凹槽，沿葉片長度方向裝合；整段列印則不建立接縫。</p>
+          <div id="bladeToolingOutput" class="rib-preview" hidden>
+            <h3 style="margin:0 0 6px">完整翼型葉片（直接列印）</h3>
+            <p class="rib-output-note">實體包含 NACA 2412 上、下表面，扭角與壓模相同。根部是平面封口，沒有安裝座。葉片比列印長度長時，沿用同一組鳩尾剖面分段；若接縫截面太薄放不下鳩尾，該接縫改為平面對接並在這裡提示。STL 已平放：長度沿 Y、前緣在 x 較小側、最低點貼齊 z=0。</p>
+            <div class="root-values" style="margin-bottom:8px">
+              <label><span class="field-title">後緣最小厚度 <span class="unit">mm</span></span><input id="teMinThickness" type="number" min="0.4" max="4" step="0.1" value="1.2"></label>
+            </div>
+            <div id="bladeJointNote" class="join-result" aria-live="polite"></div>
+            <div class="part-list" id="bladePartList" style="margin-top:10px"></div>
+          </div>
           <div id="ribToolingOutput" class="rib-preview" hidden>
             <h3 style="margin:0 0 6px">雷切翼肋骨架模輸出</h3>
             <p class="rib-output-note">每站上、下模共用一片木板排版；紅線是由左至右的貫穿分割線，切下後分成上模與下模。底座只用兩個外側卡槽定位，取消中央槽和固定梁。紅線切割、藍字雷雕；尺寸 1:1 mm。</p>

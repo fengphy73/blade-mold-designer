@@ -1,7 +1,8 @@
 import { writeFileSync, mkdirSync } from 'fs';
-import { defaultConfig, validateConfig, worldToLocal, station } from '../js/model.js';
+import { defaultConfig, validateConfig, worldToLocal, station, rawStation } from '../js/model.js';
 import { effectiveJoint, seamProfile, widthAt } from '../js/joint.js';
 import { buildMold, meshAnalysis } from '../js/mesh.js';
+import { buildBlade, bladePlans, thickenedSurfaces, unrotateBlade } from '../js/blade.js';
 import { meshToStl } from '../js/stl.js';
 
 const config = validateConfig(defaultConfig());
@@ -162,11 +163,97 @@ if (longSegs.length !== 1 || longSegs[0].start !== 0 || longSegs[0].end !== 450)
   }
 }
 
+failed = checkPrintedBlades(config, 250) || failed;
+failed = checkPrintedBlades(longBed, 500) || failed;
+
 if (failed) {
   console.error('\nCHECK FAILED');
   process.exit(1);
 }
 console.log('\nCHECK PASSED');
+
+function checkPrintedBlades(c, printer) {
+  const plans = bladePlans(c);
+  const expected = printer >= 450 ? 1 : 2;
+  console.log(`blade printer=${printer} segments`, plans.length, plans.map(s => `${s.start.toFixed(1)}-${s.end.toFixed(1)} ${s.hasEnd || s.hasStart ? 'dovetail' : s.butt ? 'butt' : 'none'}`).join(', '));
+  if (plans.length !== expected) {
+    console.error(`FAIL: printer=${printer} should produce ${expected} blade segment(s)`);
+    return true;
+  }
+  let bad = false;
+  const meshes = plans.map((_, i) => buildBlade(c, i));
+  for (const mesh of meshes) {
+    const analysis = meshAnalysis(mesh.positions, mesh.indices);
+    console.log(JSON.stringify({
+      blade: true,
+      printer,
+      segment: mesh.segmentIndex + 1,
+      joint: mesh.joint,
+      chord: `${mesh.chordStart.toFixed(1)}→${mesh.chordEnd.toFixed(1)}`,
+      twist: `${mesh.twistStart.toFixed(1)}→${mesh.twistEnd.toFixed(1)}`,
+      size: `X ${(mesh.maxX - mesh.minX).toFixed(2)} Y ${(mesh.maxY - mesh.minY).toFixed(2)} Z ${mesh.height.toFixed(2)}`,
+      y: `${mesh.minY.toFixed(2)}–${mesh.maxY.toFixed(2)}`,
+      openEdges: analysis.openEdges,
+      nonManifoldEdges: analysis.nonManifoldEdges,
+      components: analysis.components,
+      volume: +analysis.volume.toFixed(3),
+      watertight: analysis.watertight
+    }));
+    if (!analysis.watertight || analysis.volume <= 0 || analysis.components !== 1) bad = true;
+  }
+  let minTe = Infinity;
+  for (const y of [0, 75, 150, 225, 300, 375, 450]) {
+    const chord = rawStation(c, y).chord;
+    for (let i = 0; i <= 12; i++) {
+      const u = 0.9 + 0.1 * i / 12;
+      minTe = Math.min(minTe, thickenedSurfaces(u, chord, c.teMinThickness).thick);
+    }
+  }
+  for (const mesh of meshes) {
+    const ys = new Set();
+    for (let i = 1; i < mesh.positions.length; i += 3) ys.add(mesh.positions[i].toFixed(2));
+    for (const yText of [...ys].filter((_, i) => i % 12 === 0)) {
+      const y = Number(yText);
+      if (y < plans[mesh.segmentIndex].start - 0.01 || y > plans[mesh.segmentIndex].end + 0.01) continue;
+      const chord = rawStation(c, y).chord;
+      const zs = [];
+      for (let i = 0; i < mesh.positions.length; i += 3) {
+        if (Math.abs(mesh.positions[i + 1] - y) > 1e-3) continue;
+        const loc = unrotateBlade(c, mesh.positions[i + 1], mesh.positions[i], mesh.positions[i + 2] + mesh.zShift);
+        if (loc.xLocal >= chord - 0.35) zs.push(loc.zLocal);
+      }
+      if (zs.length >= 2) minTe = Math.min(minTe, Math.max(...zs) - Math.min(...zs));
+    }
+  }
+  console.log(`blade printer=${printer} min TE`, minTe.toFixed(4));
+  if (!(minTe >= c.teMinThickness - 1e-6)) bad = true;
+  if (expected === 2 && meshes[0].joint === 'dovetail') {
+    const fit = bladePlans(c)[0].fit;
+    for (const t of [0.2, 0.5, 0.8]) {
+      const y = plans[0].end + t * fit.depth;
+      const expectT = widthAt(fit.profile, t, fit.chord, 'tongue') * fit.scale;
+      const widthAtY = (mesh) => {
+        const top = [];
+        for (let i = 0; i < mesh.positions.length; i += 3) {
+          if (Math.abs(mesh.positions[i + 1] - y) > 1e-3) continue;
+          const loc = unrotateBlade(c, mesh.positions[i + 1], mesh.positions[i], mesh.positions[i + 2] + mesh.zShift);
+          if (Math.abs(loc.zLocal - (fit.zMid + fit.halfH)) < 0.02) top.push(loc.xLocal);
+        }
+        return Math.max(...top) - Math.min(...top);
+      };
+      const delta = widthAtY(meshes[1]) - widthAtY(meshes[0]);
+      console.log(JSON.stringify({ printer, t, tongue: +expectT.toFixed(4), delta: +delta.toFixed(4), expectDelta: +(2 * fit.clearance).toFixed(4) }));
+      if (Math.abs(delta - 2 * fit.clearance) > 0.01) bad = true;
+    }
+  }
+  if (expected === 1) {
+    if (meshes[0].joint !== 'none' || meshes[0].maxY > 450.05 || meshes[0].minY < -0.05) {
+      console.error('FAIL: printer=500 blade should be one piece without a joint');
+      bad = true;
+    }
+  }
+  return bad;
+}
 
 function measureWallWidth(config, mesh, y, role) {
   const pos = mesh.positions;
