@@ -1,7 +1,7 @@
 import { airfoilYZ } from './airfoil.js';
 import { effectiveJoint, seamProfile, profilePolyline } from './joint.js';
 import {
-  clamp, station, planformYs, surfaceZ, lowerMoldSurfaceZ, faceEnvelope, fenceStartY, reliefDepth
+  clamp, station, rawStation, planformYs, surfaceZ, lowerMoldSurfaceZ, faceEnvelope, fenceStartY, reliefDepth
 } from './model.js';
 import { ribStations } from './svg-ribs.js';
 
@@ -172,18 +172,65 @@ function outlineFromProfile(samples, xAt, yAt) {
   return top.concat(bot).join(' ');
 }
 
+function drawSeamSection(mode, profile, chord, split) {
+  const svg = $('jointSeamSvg');
+  if (!svg) return;
+  const card = svg.closest('.joint-visual-card');
+  if (mode !== 'blade') {
+    if (card) card.hidden = true;
+    return;
+  }
+  if (card) card.hidden = false;
+  const W = 340, H = 168, pad = 36;
+  const scale = (W - pad * 2) / chord;
+  const mid = 92;
+  const pts = [];
+  for (let i = 0; i <= 48; i++) {
+    const u = i / 48;
+    const a = airfoilYZ(u);
+    pts.push({
+      x: pad + u * chord * scale,
+      zu: mid - a.upper * chord * scale,
+      zl: mid - a.lower * chord * scale
+    });
+  }
+  const outline = pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)} ${p.zu.toFixed(1)}`).join(' ')
+    + pts.slice().reverse().map(p => `L${p.x.toFixed(1)} ${p.zl.toFixed(1)}`).join(' ') + ' Z';
+  const x0 = pad + (profile.center - profile.head / 2) * scale;
+  const x1 = pad + (profile.center + profile.head / 2) * scale;
+  const uc = profile.center / chord;
+  const ac = airfoilYZ(uc);
+  const zc = mid - ((ac.upper + ac.lower) / 2) * chord * scale;
+  const thick = (ac.upper - ac.lower) * chord;
+  const halfHpx = Math.max(3, Math.min(4, (thick - 2.4) / 2) * scale);
+  const rect = `${x0.toFixed(1)},${(zc - halfHpx).toFixed(1)} ${x1.toFixed(1)},${(zc - halfHpx).toFixed(1)} ${x1.toFixed(1)},${(zc + halfHpx).toFixed(1)} ${x0.toFixed(1)},${(zc + halfHpx).toFixed(1)}`;
+  const lead = pad;
+  const trail = pad + chord * scale;
+  svg.innerHTML = `<rect x="1" y="1" width="${W - 2}" height="${H - 2}" rx="6" fill="#fbfcfa"/>
+    <path d="${outline}" fill="#e7efe9" stroke="#557d65" stroke-width="1.6"/>
+    <polygon points="${rect}" fill="#c4553a" fill-opacity="0.85" stroke="#8d2e22" stroke-width="1.2"/>
+    <line x1="${lead}" y1="148" x2="${trail}" y2="148" stroke="#34463b" stroke-width="1.4"/>
+    <text x="${lead}" y="24" font-size="10" fill="#31573e">前緣</text>
+    <text x="${trail - 22}" y="24" font-size="10" fill="#31573e">後緣</text>
+    <text x="${((x0 + x1) / 2).toFixed(1)}" y="${(zc - halfHpx - 6).toFixed(1)}" text-anchor="middle" font-size="9" fill="#8d2e22">鳩尾 ${ (profile.centerFraction * 100 - profile.joint.widthPercent / 2).toFixed(0) }–${ (profile.centerFraction * 100 + profile.joint.widthPercent / 2).toFixed(0) }%</text>
+    <text x="170" y="162" text-anchor="middle" font-size="8" fill="#66716b">${split ? '接縫截面（前緣在左）' : '示意截面（目前整段、無接縫）'}・頭部在厚的一側</text>`;
+}
+
 function drawJoint(c) {
-  const joint = effectiveJoint(c);
+  const mode = $('toolingMode')?.value === 'blade' ? 'blade' : 'mold';
+  const joint = effectiveJoint(c, mode);
   const split = c.printableSegments.length > 1;
   const seam = split ? c.printableSegments[0].end : 0;
-  const chord = split ? station(c, seam).chord : c.stations[0].chord;
+  const chord = split
+    ? (mode === 'blade' ? rawStation(c, seam).chord : station(c, seam).chord)
+    : c.stations[0].chord;
   const profile = seamProfile(joint, chord);
-  const tongue = profilePolyline(profile, () => chord, 'tongue', 22);
-  const socket = profilePolyline(profile, () => chord, 'socket', 22);
-  const neck = tongue[0].width;
-  const head = Math.max(...tongue.map(p => p.width));
+  const tongue = profilePolyline(profile, 'tongue', 22);
+  const socket = profilePolyline(profile, 'socket', 22);
+  const neck = profile.neck;
+  const head = profile.head;
   const px = 36 / Math.max(head, 6);
-  const depthPx = Math.max(18, Math.min(56, 34 * joint.depth / 4));
+  const depthPx = Math.max(18, Math.min(56, 34 * profile.depth / 8));
   const bodyTop = 40, bodyBot = 118, mid = (bodyTop + bodyBot) / 2;
   const tonguePath = `M20 ${bodyTop} L90 ${bodyTop} ` + tongue.map(p => {
     const x = 90 + (p.t * depthPx);
@@ -215,7 +262,7 @@ function drawJoint(c) {
     }).join('');
     return `${sides}<polygon points="${polyS(back)}" fill="#e8eee9" stroke="#557d65" stroke-width="1.3"/><polygon points="${polyS(front)}" fill="${fill}" stroke="#476d56" stroke-width="2"/>`;
   };
-  const tab = Math.max(16, Math.min(54, 32 * joint.depth / 4));
+  const tab = Math.max(16, Math.min(54, 32 * profile.depth / 8));
   const aPoly = [[0, 0], [78, 0]];
   tongue.forEach(p => aPoly.push([78 + p.t * tab, 28 - p.width * px * 0.55]));
   tongue.slice().reverse().forEach(p => aPoly.push([78 + p.t * tab, 28 + p.width * px * 0.55]));
@@ -227,6 +274,7 @@ function drawJoint(c) {
   const arrow = jointExploded ? `<line x1="116" y1="166" x2="164" y2="166" stroke="#bd5545" stroke-width="2.5"/><path d="M157 161 L166 166 L157 171" fill="none" stroke="#bd5545" stroke-width="2.5"/>` : '';
   $('joint3dSvg').innerHTML = `<rect x="1" y="1" width="338" height="188" rx="7" fill="#fbfcfa"/><text x="78" y="22" text-anchor="middle" font-size="10" fill="#31573e">A 段・窄頸寬頭凸舌</text><text x="250" y="22" text-anchor="middle" font-size="10" fill="#31573e">B 段・窄口寬腹凹槽</text>${extrude(bx, 58, bPoly, '#eaf0e9', '#c2d6c7')}${extrude(24, 58, aPoly, '#dce8df', '#afc9b7')}${arrow}<line x1="40" y1="158" x2="300" y2="158" stroke="#34463b" stroke-width="1.8"/><path d="M294 153 L303 158 L294 163" fill="none" stroke="#34463b" stroke-width="1.8"/><text x="170" y="174" text-anchor="middle" font-size="8" fill="#34463b">與 STL 同一鳩尾剖面；舌根窄、外端寬</text><text x="170" y="184" text-anchor="middle" font-size="8" fill="#66716b">每側 ${joint.clearance.toFixed(1)} mm，凹槽總寬增加 ${(joint.clearance * 2).toFixed(1)} mm</text>`;
   $('jointExplode').textContent = jointExploded ? '合起' : '分開';
+  drawSeamSection(mode, profile, chord, split);
 }
 
 export function drawRib(c) {

@@ -1,7 +1,7 @@
 import { upperSurfaceLengthRatio } from './airfoil.js';
-import { effectiveJoint } from './joint.js';
+import { effectiveJoint, jointDepthMm, seamProfile } from './joint.js';
 import {
-  DEFAULT_STATIONS, validateConfig, station, slitPitchRange, bladeSvgStart, reliefDepth, clamp
+  DEFAULT_STATIONS, validateConfig, station, rawStation, slitPitchRange, bladeSvgStart, reliefDepth
 } from './model.js';
 import { buildMold } from './mesh.js';
 import { buildBlade } from './blade.js';
@@ -66,8 +66,19 @@ function configFile() {
   return JSON.stringify({ ...config, profile: 'NACA 2412', purpose: '上翼面配對壓模（含可選葉根平面接合段）' }, null, 2);
 }
 
+function jointMode() {
+  return $('toolingMode').value === 'blade' ? 'blade' : 'mold';
+}
+
 function updateLabels(c) {
-  const joint = effectiveJoint(c);
+  const mode = jointMode();
+  const joint = effectiveJoint(c, mode);
+  if (!c.jointManual) {
+    $('jointClearance').value = String(joint.clearance);
+    $('jointWidth').value = String(joint.widthPercent);
+    $('jointDepth').value = String(joint.depthPercent);
+    $('jointAngle').value = String(joint.faceAngle);
+  }
   $('slitAngleWrap').hidden = c.slitPattern1 !== 'chevron' && c.slitPattern2 !== 'chevron';
   $('developedWidthRows').innerHTML = c.stations.map((s, i) => {
     const label = i === 0 ? '根' : i === c.stations.length - 1 ? '尖' : String(i);
@@ -77,9 +88,13 @@ function updateLabels(c) {
   }).join('');
   $('moldDimensionsResult').textContent = `根部 STL 名目外寬：${(station(c, 0).chord + 2 * c.moldMargin).toFixed(1)} mm（弦長 ${station(c, 0).chord} + 每側預留 ${c.moldMargin} mm）；橫條承座 ${c.rootBarPosition.toFixed(1)} mm 位置，凹槽 ${(c.rootBarWidth + 2 * c.rootBarClearance).toFixed(1)} × ${(c.rootBarThickness / 2).toFixed(1)} mm；最薄背板 ${c.moldBackThickness} mm`;
   ['jointClearance', 'jointWidth', 'jointDepth', 'jointAngle'].forEach(id => { $(id).disabled = !c.jointManual; });
-  const total = joint.clearance * 2;
+  const gap = Number.isInteger(joint.clearance * 10) ? joint.clearance.toFixed(1) : joint.clearance.toFixed(2);
   $('jointFitResult').textContent = c.printableSegments.length > 1
-    ? `每側 ${joint.clearance.toFixed(1)} mm，凹槽總寬增加 ${total.toFixed(1)} mm · 頭部寬 ${joint.width.toFixed(0)} mm · 接合深 ${joint.depth.toFixed(1)} mm · 斜面 ${joint.angle.toFixed(0)}°${c.jointManual ? '' : ' · 進階未啟用，使用建議值'}`
+    ? c.printableSegments.slice(0, -1).map((seg, i) => {
+      const chord = (mode === 'blade' ? rawStation : station)(c, seg.end).chord;
+      const profile = seamProfile(joint, chord);
+      return `接縫 ${i + 1}：弦長 ${chord.toFixed(1)} mm → 頭部寬 ${profile.head.toFixed(1)} mm、深 ${profile.depth.toFixed(1)} mm、斜面 ${joint.faceAngle.toFixed(0)}°、每側間隙 ${gap} mm`;
+    }).join('；') + (c.jointManual ? '' : (mode === 'blade' ? '（完整葉片建議：寬 50%、置於弦長 15–65%）' : '（壓模建議：寬 55%、置中）'))
     : '整段列印，不生成分段定位面';
   const relief = reliefDepth(c);
   $('locatorResult').textContent = c.locatorEnabled
@@ -99,7 +114,7 @@ function drawParts(c, molds = []) {
   const list = $('partList');
   list.innerHTML = '';
   const segments = c.printableSegments;
-  const joint = effectiveJoint(c);
+  const joint = effectiveJoint(c, 'mold');
   for (let i = 0; i < segments.length; i++) {
     const { start, end } = segments[i];
     const len = end - start;
@@ -114,7 +129,10 @@ function drawParts(c, molds = []) {
     if (c.locatorEnabled) suffix += ' · 下模含兩側定位擋邊';
     const angleWarning = c.stations.some(s => s.y >= start && s.y <= end && Math.abs(s.twist) > 45)
       ? '<div class="part-detail twist-warning">⚠ 本段含有超過 ±45° 的站位扭角，請檢查該站輸入值。</div>' : '';
-    const printSpan = len + (segments.length > 1 && i < segments.length - 1 ? clamp(joint.depth, 1, 8) : 0);
+    const tongue = segments.length > 1 && i < segments.length - 1
+      ? jointDepthMm(station(c, end).chord, joint)
+      : 0;
+    const printSpan = len + tongue;
     const upper = molds.find(m => m.segmentIndex === i && m.kind === 'upper');
     const lower = molds.find(m => m.segmentIndex === i && m.kind === 'lower');
     const heightNote = upper && lower
@@ -210,7 +228,7 @@ function drawBladeParts(c, blades) {
   $('bladeJointNote').textContent = notes.length
     ? notes.join(' ')
     : (blades.some(b => b.joint === 'dovetail')
-      ? `鳩尾沿葉片長度接合。每側間隙 ${effectiveJoint(c).clearance.toFixed(1)} mm，凹槽比凸舌寬 ${(effectiveJoint(c).clearance * 2).toFixed(1)} mm，並留在翼型截面內部。`
+      ? `鳩尾沿葉片長度接合，頭部放在弦長 15–65%（厚的一側）。每側間隙 ${effectiveJoint(c, 'blade').clearance.toFixed(1)} mm，凹槽比凸舌寬 ${(effectiveJoint(c, 'blade').clearance * 2).toFixed(1)} mm。`
       : '這支葉片不必分段，輸出整段、沒有接縫。');
   list.innerHTML = '';
   blades.forEach((mesh, i) => {

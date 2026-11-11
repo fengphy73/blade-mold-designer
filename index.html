@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="輸入風機葉片尺寸，預覽 NACA 2412 上翼面配對壓模並匯出封閉的分段 STL。">
-  <title>風機葉片與壓模設計器 v1.1.3</title>
+  <title>風機葉片與壓模設計器 v1.2</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -17,7 +17,7 @@
         <h1>風機葉片與壓模設計器</h1>
         <p class="intro" id="intro">一組互補的上、下模夾住同一片巴沙木，壓出上翼面的弧度；模具只在超出列印長度時自動拆件。</p>
       </div>
-      <div class="tag">NACA 2412 · PLA+ 原型模具 · v1.1.3</div>
+      <div class="tag">NACA 2412 · PLA+ 原型模具 · v1.2</div>
     </header>
 
     <div class="layout">
@@ -119,18 +119,19 @@
           <p>超過列印長度才拆件。A 段尾端做一體凸舌，B 段起始端留配合凹槽：舌根窄、外端寬；凹槽入口窄、內部寬。依目前剖面，兩段沿葉片長度方向滑合；舌槽貫穿模具厚度，不另加獨立榫鍵，外部夾具負責固定。</p>
           <div class="join-values">
             <label class="root-toggle"><input id="jointManual" type="checkbox"><span>進階：手動調整定位面</span></label>
-            <label><span class="field-title">單側鬆配間隙 <span class="unit">mm</span></span><input id="jointClearance" type="number" min="0.1" max="3" step="0.1" value="0.4" disabled></label>
-            <label><span class="field-title">鳩尾頭部寬度 <span class="unit">mm</span></span><input id="jointWidth" type="number" min="6" max="24" step="1" value="12" disabled></label>
-            <label><span class="field-title">接合深度（葉片方向） <span class="unit">mm</span></span><input id="jointDepth" type="number" min="1" max="8" step="0.5" value="4" disabled></label>
-            <label><span class="field-title">鳩尾斜面角 <span class="unit">°</span></span><input id="jointAngle" type="number" min="25" max="60" step="1" value="45" disabled></label>
-            <div id="jointFitResult" class="join-result" aria-live="polite">建議值：每側間隙 0.4 mm（總寬增加 0.8 mm）· 頭部寬 12 mm · 插入深度 4 mm · 斜面 45°</div>
+            <label><span class="field-title">單側間隙 <span class="unit">mm</span></span><input id="jointClearance" type="number" min="0.05" max="3" step="0.05" value="0.1" disabled></label>
+            <label><span class="field-title">鳩尾寬度（弦長 %） <span class="unit">%</span></span><input id="jointWidth" type="number" min="20" max="80" step="1" value="55" disabled></label>
+            <label><span class="field-title">接合深度（弦長 %） <span class="unit">%</span></span><input id="jointDepth" type="number" min="8" max="40" step="1" value="16" disabled></label>
+            <label><span class="field-title">斜面與接縫面夾角 <span class="unit">°</span></span><input id="jointAngle" type="number" min="55" max="80" step="1" value="60" disabled></label>
+            <div id="jointFitResult" class="join-result" aria-live="polite">整段列印，不生成分段定位面</div>
           </div>
           <div class="joint-visuals">
             <div class="joint-visual-card"><div class="joint-visual-title">接合方向示意</div><svg id="jointDirectionSvg" viewBox="0 0 260 150" role="img" aria-label="A 段凸舌沿葉片長度方向滑入 B 段鳩尾凹槽"></svg></div>
             <div class="joint-visual-card"><div class="joint-visual-title"><span>接縫局部 3D 預覽</span><span class="joint-view-controls"><button id="jointRotateLeft" type="button" aria-label="向左旋轉預覽">↶</button><button id="jointRotateRight" type="button" aria-label="向右旋轉預覽">↷</button><button id="jointExplode" type="button">分解</button></span></div><svg id="joint3dSvg" viewBox="0 0 340 190" role="img" aria-label="分段接縫梯形定位面的立體預覽"></svg></div>
+            <div class="joint-visual-card" hidden><div class="joint-visual-title">葉片接縫截面（前緣在左）</div><svg id="jointSeamSvg" viewBox="0 0 340 168" role="img" aria-label="翼型接縫截面，鳩尾位於靠近前緣的厚處"></svg></div>
           </div>
-          <p class="joint-preview-note">鳩尾剖面沿模具厚度方向貫穿；裝配時 A 段凸舌沿葉片長度滑入 B 段凹槽。間隙提供鬆配，建議先列印短測試件確認公差。</p>
-          <p style="margin:8px 0 0">預設每側間隙 0.4 mm；可調範圍 0.1–3.0 mm（總寬增加 0.2–6.0 mm）。鳩尾轉角採圓弧過渡；凸舌與凹槽同高、貫穿模具全高。外部夾具負責抵抗接縫張開。</p>
+          <p class="joint-preview-note">鳩尾剖面沿厚度方向貫穿；裝配時 A 段凸舌沿葉片長度滑入 B 段凹槽。寬度與深度跟該接縫的弦長走，舌與槽共用同一剖面。</p>
+          <p style="margin:8px 0 0">預設每側間隙 0.1 mm（可調 0.05–3 mm）。斜面與接縫面夾角預設 60°。模具頭部為弦長 55% 並置中；完整葉片為弦長 50%，放在弦長 15–65%（厚的一側）。深度為弦長 16%，限制在 6–15 mm。轉角仍採圓弧過渡。</p>
         </div>
           <div class="mini"><strong>目前 3D 列印模面方向</strong><br>下模為凹面配合，上模為凸面支撐；兩面間以木片厚度加模具間隙分開。模具預設保持整體；超過可用列印長度才自動拆分。</div>
       </section>

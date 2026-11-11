@@ -203,14 +203,14 @@ function airfoilIds(mesh, c, y, teMin) {
  */
 export function bladeJointFit(c, y) {
   const teMin = c.teMinThickness;
-  const joint = effectiveJoint(c);
+  const joint = effectiveJoint(c, 'blade');
   const st = rawStation(c, y);
   const chord = st.chord;
   const profile = seamProfile(joint, chord);
   const wall = 1.2;
-  const tongueHead = widthAt(profile, 1, chord, 'tongue');
+  const tongueHead = profile.head;
   let scale = 1;
-  let socketHead = widthAt(profile, 1, chord, 'socket');
+  let socketHead = tongueHead + 2 * joint.clearance;
   const maxW = chord - 2 * wall;
   if (socketHead > maxW) {
     const room = maxW - 2 * joint.clearance;
@@ -218,23 +218,35 @@ export function bladeJointFit(c, y) {
     scale = room / tongueHead;
     socketHead = tongueHead * scale + 2 * joint.clearance;
   }
-  const center = chord * c.twistAxis / 100;
+  // Leading edge is x = 0. Default head is 50% of chord, centered at 40%
+  // so the dovetail spans 15%–65% of chord, on the thick part of NACA 2412.
+  const center = profile.center;
   const halfW = socketHead / 2;
   if (center - halfW < wall || center + halfW > chord - wall) {
     return { ok: false, reason: '鳩尾會碰到前緣或後緣' };
   }
   let minThick = Infinity;
-  for (let i = 0; i <= 10; i++) {
-    const x = center - halfW + (2 * halfW * i) / 10;
+  const edgeXs = [center - tongueHead * scale / 2, center + tongueHead * scale / 2];
+  for (let i = 0; i <= 12; i++) {
+    const x = (center - halfW) + (2 * halfW * i) / 12;
     const s = thickenedSurfaces(clamp(x / chord, 0, 1), chord, teMin);
     minThick = Math.min(minThick, s.zu - s.zl);
   }
+  const edgeThick = edgeXs.map(x => {
+    const s = thickenedSurfaces(clamp(x / chord, 0, 1), chord, teMin);
+    return s.zu - s.zl;
+  });
   const availH = minThick - 2 * wall;
-  if (!(availH >= 2)) return { ok: false, reason: '接縫截面太薄，放不下有外壁的鳩尾' };
+  if (!(availH >= 2)) return { ok: false, reason: '接縫截面太薄，放不下有外壁的鳩尾', edgeThick, minThick };
   const halfH = Math.min(4, availH / 2);
   const mid = thickenedSurfaces(clamp(center / chord, 0, 1), chord, teMin);
   const zMid = (mid.zu + mid.zl) / 2;
-  return { ok: true, scale, halfH, zMid, center, profile, chord, clearance: joint.clearance, depth: joint.depth };
+  return {
+    ok: true, scale, halfH, zMid, center, profile, chord,
+    clearance: joint.clearance, depth: profile.depth,
+    head: tongueHead * scale, neck: profile.neck * scale,
+    edgeThick, minThick
+  };
 }
 
 export function bladePlans(c) {
@@ -267,7 +279,7 @@ export function bladePlans(c) {
 }
 
 function halfWidth(fit, t, kind) {
-  const tongue = widthAt(fit.profile, t, fit.chord, 'tongue') * fit.scale;
+  const tongue = widthAt(fit.profile, t, 'tongue') * fit.scale;
   if (kind === 'socket') return (tongue + 2 * fit.clearance) / 2;
   return tongue / 2;
 }
