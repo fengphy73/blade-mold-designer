@@ -4,7 +4,11 @@ import { effectiveJoint, seamProfile, widthAt, jointDepthMm } from '../js/joint.
 import { buildMold, meshAnalysis } from '../js/mesh.js';
 import { buildBlade, bladePlans, thickenedSurfaces, unrotateBlade } from '../js/blade.js';
 import { meshToStl } from '../js/stl.js';
-import { bladePlanformSvg } from '../js/svg-blade.js';
+import { bladePlanformSvg, rootSlitLayers, slitSegments } from '../js/svg-blade.js';
+import { configFileText } from '../js/model.js';
+import { RS, featureDistance, edgeDistance, featureCutLength, rootSlitWeights, rootSlitSwitchLines, outlinePolygon } from '../js/root-slits.js';
+import { paramSets, formLike, hashOutputs } from './output-hashes.mjs';
+import { readFileSync } from 'fs';
 
 const config = validateConfig(defaultConfig());
 const segments = config.printableSegments;
@@ -299,6 +303,148 @@ function reportSeams(label, c, mode) {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// v1.3.0 葉根割線模式
+// ---------------------------------------------------------------------------
+console.log('\n=== v1.3.0 root-slit modes ===');
+let rsTests = 0;
+const rsFail = msg => { console.error('FAIL: ' + msg); failed = true; };
+const rsCheck = (ok, msg) => { rsTests++; if (!ok) rsFail(msg); };
+const reference = JSON.parse(readFileSync(new URL('./fixtures/v1.2.2-hashes.json', import.meta.url), 'utf8'));
+const hashMods = { validateConfig, buildMold, buildBlade, bladePlans, meshToStl, bladePlanformSvg, configText: configFileText };
+const ROOT_DEFAULTS = { rootSlitMode: 'off', rootSlitTheta1: 23, rootSlitTheta2: 42, rootSlitBand: 15 };
+const sets = paramSets();
+rsCheck(sets.length === reference.length, 'v1.2.2 reference set count');
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+for (let i = 0; i < sets.length; i++) {
+  const ref = reference[i];
+  const off = hashOutputs(hashMods, formLike(defaultConfig(), sets[i].overrides, ROOT_DEFAULTS));
+  const oldFile = hashOutputs(hashMods, formLike(defaultConfig(), sets[i].overrides));
+  for (const key of ['svg', 'molds', 'blades', 'config']) {
+    rsCheck(same(off[key], ref[key]), `[${sets[i].name}] mode off: ${key} differs from v1.2.2`);
+    rsCheck(same(oldFile[key], ref[key]), `[${sets[i].name}] old parameter file (no root-slit keys): ${key} differs from v1.2.2`);
+  }
+  for (const mode of ['A', 'B', 'C']) {
+    const on = hashOutputs(hashMods, formLike(defaultConfig(), sets[i].overrides, { ...ROOT_DEFAULTS, rootSlitMode: mode }), { skipConfig: true });
+    rsCheck(same(on.molds, ref.molds), `[${sets[i].name}] mode ${mode}: mold STL differs from v1.2.2`);
+    rsCheck(same(on.blades, ref.blades), `[${sets[i].name}] mode ${mode}: full-blade STL differs from v1.2.2`);
+    rsCheck(on.svg !== ref.svg, `[${sets[i].name}] mode ${mode}: SVG should change`);
+  }
+  console.log(`byte-for-byte vs v1.2.2 [${sets[i].name}]: off/old-file SVG+STL+params identical; A/B/C STL identical (${ref.molds.length} mold + ${ref.blades.length} blade files)`);
+}
+
+function auditLayout(c, label) {
+  const layers = rootSlitLayers(c);
+  const { m } = rootSlitWeights(c);
+  const fullSpan = c.stations.at(-1).y;
+  const E = Math.max(RS.edge, c.slitEdgeKeep);
+  const stats = { minBridge: Infinity, minEdge: Infinity, overlaps: 0, added: 0, rootCut: 0, totalCut: 0, tipKept: 0 };
+  for (const L of layers) {
+    const keptSet = new Set(L.kept);
+    const all = [...L.kept.map(i => L.existingFeatures[i]), ...L.added];
+    const poly = outlinePolygon(c, L.outStart, fullSpan);
+    let tipMissing = 0;
+    L.existing.forEach((s, i) => {
+      const tip = m(s.y) <= 0 && m(s.endY) <= 0 && m((s.y + s.endY) / 2) <= 0;
+      if (tip) { stats.tipKept++; if (!keptSet.has(i)) tipMissing++; }
+    });
+    rsCheck(tipMissing === 0, `${label} layer ${L.layer}: ${tipMissing} tip slits (beyond θ1) changed`);
+    for (const f of L.added) {
+      rsCheck(m(f.bbox.minY) > 0, `${label} layer ${L.layer}: new ${f.kind} lies beyond θ1 (tip side)`);
+      const e = f.edgeOk ? edgeDistance(f, poly, L.outStart + E) : edgeDistance(f, poly);
+      stats.minEdge = Math.min(stats.minEdge, e);
+      rsCheck(e >= E - 1e-6, `${label} layer ${L.layer}: ${f.kind} only ${e.toFixed(3)} mm from the outline`);
+      for (const g of all) {
+        if (g === f) continue;
+        if (g.bbox.minX > f.bbox.maxX + 3 || f.bbox.minX > g.bbox.maxX + 3 || g.bbox.minY > f.bbox.maxY + 3 || f.bbox.minY > g.bbox.maxY + 3) continue;
+        const d = featureDistance(f, g);
+        if (d <= 0) stats.overlaps++;
+        stats.minBridge = Math.min(stats.minBridge, d);
+      }
+    }
+    rsCheck(stats.overlaps === 0, `${label}: cut lines overlap`);
+    rsCheck(stats.minBridge >= RS.bridge - 1e-6, `${label}: bridge ${stats.minBridge.toFixed(3)} mm < ${RS.bridge}`);
+    stats.added += L.added.length;
+    stats.rootCut += L.added.reduce((a, f) => a + featureCutLength(f), 0);
+    stats.totalCut += all.reduce((a, f) => a + featureCutLength(f), 0);
+  }
+  const svg = bladePlanformSvg(c);
+  rsCheck(svg.startsWith('<svg') && svg.endsWith('</svg>') && !svg.includes('NaN') && !svg.includes('Infinity'), `${label}: SVG malformed`);
+  return { layers, stats, svg };
+}
+
+const modeStats = {};
+for (const mode of ['A', 'B', 'C']) {
+  const c = validateConfig({ ...defaultConfig(), rootSlitMode: mode });
+  const { layers, stats, svg } = auditLayout(c, `default ${mode}`);
+  const lines = rootSlitSwitchLines(c);
+  rsCheck(lines.theta2.length === 1 && Math.abs(lines.theta2[0].y - 74.8) < 0.01, `default ${mode}: θ2 switch line should be r=74.8`);
+  rsCheck(lines.theta1.length === 1 && Math.abs(lines.theta1[0].y - 150.88) < 0.02, `default ${mode}: θ1 switch line should be r≈150.9`);
+  const text = mode === 'C'
+    ? 'SVG 葉片長 420.000 mm（含葉根修切量 5 mm，壓好後沿藍色修切線 r=35.000 mm 切齊），從距圓心 30.000 mm 延伸至 450.000 mm'
+    : 'SVG 葉片長 415.000 mm，從距圓心 35.000 mm 延伸至 450.000 mm';
+  rsCheck(svg.includes(text), `default ${mode}: SVG length text`);
+  rsCheck(svg.includes(`height="${mode === 'C' ? '440.000' : '435.000'}mm"`), `default ${mode}: SVG height`);
+  rsCheck(mode !== 'C' || (svg.match(/TRIM_LINE/g) || []).length === 2, 'default C: one trim line per layer');
+  // r=35–110: same features as the v1.3.0 test pieces (blade-root-test-*.svg), counted in 35–107 mm
+  const inTest = L => [...L.kept.map(i => L.existingFeatures[i]), ...L.added].filter(f => f.bbox.maxY <= 107 + RS.hole + 1e-6 && f.bbox.minY >= 30 - 1e-6);
+  const counts = layers.map(L => inTest(L).length);
+  const expected = { A: [94, 86], B: [53, 53], C: [44, 34] }[mode];
+  rsCheck(same(counts, expected), `default ${mode}: r=35–110 feature counts ${counts} (expected ${expected})`);
+  const cfg = configFileText(c);
+  rsCheck(cfg.includes(`"rootSlitMode": "${mode}"`) && cfg.includes('"rootSlitTheta2": 42'), `default ${mode}: parameter file keeps root-slit fields`);
+  modeStats[mode] = { switchLines: { theta2: lines.theta2.map(x => +x.y.toFixed(2)), theta1: lines.theta1.map(x => +x.y.toFixed(2)) }, newFeatures: stats.added, minBridge: +stats.minBridge.toFixed(3), minEdge: +stats.minEdge.toFixed(3), rootCutMm: +stats.rootCut.toFixed(1), allSlitsCutMm: +stats.totalCut.toFixed(1), r35to110: counts };
+  console.log(`mode ${mode}`, JSON.stringify(modeStats[mode]));
+}
+rsCheck(!configFileText(validateConfig(defaultConfig())).includes('rootSlit'), 'mode off: parameter file must not contain root-slit keys');
+
+// Clamping and old files
+{
+  const c = validateConfig({ ...defaultConfig(), rootSlitMode: 'A', rootSlitTheta1: 5, rootSlitTheta2: 80, rootSlitBand: 55 });
+  rsCheck(c.rootSlitTheta1 === 10 && c.rootSlitTheta2 === 60 && c.rootSlitBand === 40 && c.rootSlitNotes.length === 3, 'out-of-range θ1/θ2/band should clamp to 10/60/40 with three notes');
+  const d = validateConfig({ ...defaultConfig(), rootSlitMode: 'B', rootSlitTheta1: 40, rootSlitTheta2: 30 });
+  rsCheck(d.rootSlitTheta2 === 45 && d.rootSlitNotes.some(n => n.includes('θ2 必須大於 θ1')), 'θ2 ≤ θ1 should become θ1 + 5');
+  const old = { ...defaultConfig() };
+  for (const k of ['rootSlitMode', 'rootSlitTheta1', 'rootSlitTheta2', 'rootSlitBand']) delete old[k];
+  const e = validateConfig(old);
+  rsCheck(e.rootSlitMode === 'off' && e.rootSlitNotes.length === 0, 'old parameter file without root-slit keys → off, no notes');
+  const f = validateConfig({ ...defaultConfig(), rootSlitMode: 'Z' });
+  rsCheck(f.rootSlitMode === 'off' && f.rootSlitNotes.length === 1, 'unknown mode → off with a note');
+  console.log('root-slit clamping / old-file checks done');
+}
+
+// Extreme parameters: must not throw, and all layout rules still hold
+const scaleStations = k => defaultConfig().stations.map(s => ({ ...s, chord: +(s.chord * k).toFixed(2) }));
+const extremes = [
+  ['θ1=10 θ2=25', { rootSlitTheta1: 10, rootSlitTheta2: 25 }],
+  ['θ1=45 θ2=60', { rootSlitTheta1: 45, rootSlitTheta2: 60 }],
+  ['θ1=44 θ2=45', { rootSlitTheta1: 44, rootSlitTheta2: 45 }],
+  ['band 0', { rootSlitBand: 0 }],
+  ['band 40', { rootSlitBand: 40 }],
+  ['chord ×0.6', { stations: scaleStations(0.6) }],
+  ['chord ×1.4', { stations: scaleStations(1.4) }],
+  ['root pad off', { rootPadEnabled: false }],
+  ['printer 250', { printer: 250 }],
+  ['chevron + edge 6 + corner 10', { slitPattern1: 'chevron', slitPattern2: 'straight', slitEdgeKeep: 6, cornerRadius: 10 }],
+  ['stagger 0, pitch 5', { slitStagger: 0, chordSlitPitch: 5 }],
+  ['short blade, high twist', { rootPadLength: 10, rootBarPosition: 5, stations: [{ y: 0, chord: 40, twist: 0 }, { y: 15, chord: 40, twist: 70 }, { y: 60, chord: 35, twist: 50 }, { y: 120, chord: 30, twist: 20 }] }],
+  ['negative twist', { stations: defaultConfig().stations.map(s => ({ ...s, twist: -s.twist })) }],
+  ['axis 0% / 100%', { twistAxis: 0 }],
+  ['axis 100%', { twistAxis: 100 }]
+];
+for (const [name, o] of extremes) {
+  for (const mode of ['A', 'B', 'C']) {
+    try {
+      const c = validateConfig({ ...defaultConfig(), ...o, rootSlitMode: mode });
+      const { stats } = auditLayout(c, `[${name}] ${mode}`);
+      rsCheck(Number.isFinite(stats.rootCut), `[${name}] ${mode}: cut length`);
+      if (mode === 'C' && stats.added === 0) console.log(`  note [${name}] C: no new features`);
+    } catch (e) { rsCheck(false, `[${name}] ${mode} threw: ${e.message}`); }
+  }
+}
+console.log(`extreme parameter sets: ${extremes.length} × 3 modes laid out without errors`);
+console.log(`root-slit checks: ${rsTests}`);
 
 if (failed) {
   console.error('\nCHECK FAILED');

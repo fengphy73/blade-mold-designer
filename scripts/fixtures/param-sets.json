@@ -1,0 +1,10 @@
+[
+  { "name": "default", "overrides": {} },
+  { "name": "root pad off", "overrides": { "rootPadEnabled": false } },
+  { "name": "printer 250 (two pieces)", "overrides": { "printer": 250 } },
+  { "name": "printer 250, M3 lugs, no locator, manual joint", "overrides": { "printer": 250, "clampEnabled": true, "locatorEnabled": false, "jointManual": true, "jointClearance": 0.3 } },
+  { "name": "chevron / straight slits", "overrides": { "slitPattern1": "chevron", "slitPattern2": "straight", "slitStagger": 30, "chordSlitPitch": 7, "slitAngle": 15 } },
+  { "name": "smaller blade, other twist", "overrides": { "wood": 1.5, "cornerRadius": 6, "slitEdgeKeep": 4, "autoSlitDensity": false, "rootPadLength": 20,
+      "stations": [ { "y": 0, "chord": 60, "twist": 0 }, { "y": 25, "chord": 60, "twist": 55 }, { "y": 90, "chord": 55, "twist": 30 }, { "y": 200, "chord": 50, "twist": 12 }, { "y": 320, "chord": 40, "twist": 4 } ] } },
+  { "name": "axis 40%, long blend, longer slits", "overrides": { "twistAxis": 40, "moldMargin": 5, "rootBlendLength": 12, "slitLength": 8, "slitGap": 2 } }
+]

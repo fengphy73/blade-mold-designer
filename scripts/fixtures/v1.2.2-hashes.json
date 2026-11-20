@@ -1,0 +1,92 @@
+[
+ {
+  "name": "default",
+  "svg": "3cd86f93d2cfdb4ede8a9e74b468d6d24691ee11c21c118933a9a7ed09cd81bb",
+  "molds": [
+   "7f07af8f3b5b99edebae05068260139cdd6e35f0be5d93ffdd94fa70c88c659b",
+   "5328cc1d132ea80cf960428f7a0084d0dde66fe07a11a7d0520032c01a6885a6"
+  ],
+  "blades": [
+   "0beb1f1e0c11ebd881f2aa742128b0034a8a72f8f5a1e548f1777fdec3f44165"
+  ],
+  "config": "15d5d7fee06781991c6dde40c4e513a6c2365e7376f64010838e02638b3927dd"
+ },
+ {
+  "name": "root pad off",
+  "svg": "4dcf66cd61553f69c18e6f6343d3e2f841318b10059af6d6f66e08d60cf620d1",
+  "molds": [
+   "cdea5b47d6da0e59205ebf855ed34313bec106701e22412ec9c64254e1f6b234",
+   "db602b1496be08ec6e01a2fa7bc2db36e62941e447b019f270b005a907315bf7"
+  ],
+  "blades": [
+   "0beb1f1e0c11ebd881f2aa742128b0034a8a72f8f5a1e548f1777fdec3f44165"
+  ],
+  "config": "ba71ab3cc8f62b7059fda56a7099bba3d58f50c955509037a6a4e74a06044f20"
+ },
+ {
+  "name": "printer 250 (two pieces)",
+  "svg": "3cd86f93d2cfdb4ede8a9e74b468d6d24691ee11c21c118933a9a7ed09cd81bb",
+  "molds": [
+   "fd8c2e3bd1a7e8f364ef1ec51e311b79aad0b1948622fd5969de2cef5b014073",
+   "1703aafddd277f3ac122ea93d7518846c1aff0f6ea0b1db907066381a75762bd",
+   "74a3c7d6e156995850690517c7154ecbb47e535218ceca92eb924f2139643a12",
+   "381847aa68b877aac828664861cc2a8400d3e359841ebc51cbd71c907ad300fe"
+  ],
+  "blades": [
+   "78ad8ec93d5917e44b47202cf72b1ff5d23bfd139b4bf60100a445ef1acccd80",
+   "953709f3b5e5bd30cf863e2a7efdc48d9e9022b4f4c76452746fc1eacda6e7c0"
+  ],
+  "config": "bd91871a66c46586bb68fbb2fa0f0a65392fb38ca815bc0b90439e6beeba9a2d"
+ },
+ {
+  "name": "printer 250, M3 lugs, no locator, manual joint",
+  "svg": "3cd86f93d2cfdb4ede8a9e74b468d6d24691ee11c21c118933a9a7ed09cd81bb",
+  "molds": [
+   "6478dbbeb5355152d2e1a03cc1bd0169df3dcc0c817c4e6d42f49ef10e8de009",
+   "1b12cb5a40efc238702452c9ddd657bd7c2d6d27f1e9b80ee2e6d90147e5dfcb",
+   "adc3fc01f2a812a44b77b7c7c4f177875d3b5e85b4b0ca09f819484ca3a0de42",
+   "e003ab0a20b3d672e31073d094ee3ef8ae789620269bd2159f12618a0dce351f"
+  ],
+  "blades": [
+   "b322b54677c0f4d1924c474684adbac5aaf1673be0e8e2cf600e17a6445270b3",
+   "75d6a20d6271bb39dee2c90fad6fc2d8acf420b9b6b64499f4fa660fa2ca3ad5"
+  ],
+  "config": "2f9512f7ef64338fa3461ec6d8f280611a5a9b11bc731c4e954109773a293aa6"
+ },
+ {
+  "name": "chevron / straight slits",
+  "svg": "c05a0eeece91715bcbe9a980439ef65b865190a80b1053002bc8ea545c223169",
+  "molds": [
+   "7f07af8f3b5b99edebae05068260139cdd6e35f0be5d93ffdd94fa70c88c659b",
+   "5328cc1d132ea80cf960428f7a0084d0dde66fe07a11a7d0520032c01a6885a6"
+  ],
+  "blades": [
+   "0beb1f1e0c11ebd881f2aa742128b0034a8a72f8f5a1e548f1777fdec3f44165"
+  ],
+  "config": "c4d72fe612d0e0125abf0b83d9bc357f0725ee3ad4de410037d356875963144f"
+ },
+ {
+  "name": "smaller blade, other twist",
+  "svg": "f95ef94b93bbe4d3ed9f3ac879e159f2559f20dfca61482bf055ecbfdf450a2c",
+  "molds": [
+   "366c802a25be05c8599a6af868ece52c395f0e784ade0d9d5cba01b5403775ee",
+   "3570c33ba3bb63f2e70edd9c6d04f83593f0eccc45055e810348313a8421ea72"
+  ],
+  "blades": [
+   "997cf1faf175308f76e2e88917c06ba83720d2e46be21c57cf263e99a4325b9e"
+  ],
+  "config": "63929ec21a8f8ded5d09206fa0b690b37a57cb6d77d03a3b764f5eacc66c8bd2"
+ },
+ {
+  "name": "axis 40%, long blend, longer slits",
+  "svg": "010a4d1b68842f3f6346242af7a791ffb59cd6b39f0223245be840043e27b968",
+  "molds": [
+   "e0f6fb52085fd83fa7efe4151dc78a113f01cd4a124637ab34378f2bdee75f4a",
+   "fc03a0e690c3fa35d3bb91800a54c6fee830f0b67aa1f8e749c08a6e48c87887"
+  ],
+  "blades": [
+   "985af5fe798d6f75155388402814eefc3a0632594df9bdd36c266091d4800470"
+  ],
+  "config": "70fb833c6a8e8f4b679eb635fd4861a19c6fe210ddf426205bdc6971ce7715e2"
+ }
+]

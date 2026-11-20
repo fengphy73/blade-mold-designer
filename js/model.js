@@ -59,6 +59,10 @@ export function defaultConfig() {
     autoSlitDensity: true,
     slitPattern1: 'staggered',
     slitPattern2: 'staggered',
+    rootSlitMode: 'off',
+    rootSlitTheta1: 23,
+    rootSlitTheta2: 42,
+    rootSlitBand: 15,
     teMinThickness: 1.2,
     stations: DEFAULT_STATIONS.map(s => ({ ...s }))
   };
@@ -127,6 +131,7 @@ export function validateConfig(input) {
   if (!['straight', 'staggered', 'chevron'].includes(c.slitPattern1) || !['straight', 'staggered', 'chevron'].includes(c.slitPattern2)) {
     throw new Error('請選擇有效的切線圖樣。');
   }
+  c.rootSlitNotes = normalizeRootSlit(c);
   if (c.slitLength < 1 || c.slitLength > 30 || c.slitGap < 0.5 || c.slitGap > 15) throw new Error('請檢查短切線長度與切段間隔。');
   if (c.slitPitch1 < 2 || c.slitPitch1 > 30 || c.slitPitch2 < 2 || c.slitPitch2 > 30) throw new Error('兩層切線列距請設定在 2–30 mm。');
   if (c.twistPerRow < 0.2 || c.twistPerRow > 3) throw new Error('每列目標扭角變化請設定在 0.2–3°。');
@@ -166,6 +171,52 @@ export function validateConfig(input) {
     }
   }
   return c;
+}
+
+export const ROOT_SLIT_KEYS = ['rootSlitMode', 'rootSlitTheta1', 'rootSlitTheta2', 'rootSlitBand'];
+export const ROOT_SLIT_DEFAULTS = { rootSlitMode: 'off', rootSlitTheta1: 23, rootSlitTheta2: 42, rootSlitBand: 15 };
+export const ROOT_SLIT_LIMITS = { rootSlitTheta1: [10, 45], rootSlitTheta2: [25, 60], rootSlitBand: [0, 40] };
+
+/** 葉根割線模式欄位：缺少時用預設（舊參數檔 → 關閉），超出範圍時自動修正並回傳中文提示。 */
+export function normalizeRootSlit(c) {
+  const notes = [];
+  if (!['off', 'A', 'B', 'C'].includes(c.rootSlitMode)) {
+    if (c.rootSlitMode !== undefined) notes.push('葉根割線模式無法辨識，已改為「關閉」。');
+    c.rootSlitMode = 'off';
+  }
+  const label = { rootSlitTheta1: 'θ1', rootSlitTheta2: 'θ2', rootSlitBand: '過渡帶寬度' };
+  const unit = { rootSlitTheta1: '°', rootSlitTheta2: '°', rootSlitBand: ' mm' };
+  for (const key of ['rootSlitTheta1', 'rootSlitTheta2', 'rootSlitBand']) {
+    const [lo, hi] = ROOT_SLIT_LIMITS[key];
+    let v = Number(c[key]);
+    if (c[key] === undefined || c[key] === '' || !Number.isFinite(v)) {
+      if (c[key] !== undefined && c[key] !== '') notes.push(`${label[key]} 不是數字，已改回預設 ${ROOT_SLIT_DEFAULTS[key]}${unit[key]}。`);
+      v = ROOT_SLIT_DEFAULTS[key];
+    } else if (v < lo || v > hi) {
+      const fixed = Math.min(hi, Math.max(lo, v));
+      notes.push(`${label[key]} 超出範圍（${lo}–${hi}${unit[key]}），已自動修正為 ${fixed}${unit[key]}。`);
+      v = fixed;
+    }
+    c[key] = v;
+  }
+  if (c.rootSlitTheta2 <= c.rootSlitTheta1) {
+    const fixed = Math.min(60, c.rootSlitTheta1 + 5);
+    notes.push(`θ2 必須大於 θ1，已自動修正為 ${fixed}°。`);
+    c.rootSlitTheta2 = fixed;
+    if (c.rootSlitTheta2 <= c.rootSlitTheta1) {
+      c.rootSlitTheta1 = c.rootSlitTheta2 - 5;
+      notes.push(`θ1 已同時調整為 ${c.rootSlitTheta1}°。`);
+    }
+  }
+  return notes;
+}
+
+/** 參數檔內容。模式關閉時不寫入葉根割線欄位，檔案與 v1.2.2 相同。 */
+export function configFileText(config) {
+  const out = { ...config };
+  delete out.rootSlitNotes;
+  if (!out.rootSlitMode || out.rootSlitMode === 'off') for (const k of ROOT_SLIT_KEYS) delete out[k];
+  return JSON.stringify({ ...out, profile: 'NACA 2412', purpose: '上翼面配對壓模（含可選葉根平面接合段）' }, null, 2);
 }
 
 export function rawStation(c, y) {
