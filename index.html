@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="輸入風機葉片尺寸，預覽 NACA 2412 上翼面配對壓模並匯出封閉的分段 STL。">
-  <title>風機葉片與壓模設計器 v1.2.2</title>
+  <title>風機葉片與壓模設計器 v1.3.0</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -17,7 +17,7 @@
         <h1>風機葉片與壓模設計器</h1>
         <p class="intro" id="intro">一組互補的上、下模夾住同一片巴沙木，壓出上翼面的弧度；模具只在超出列印長度時自動拆件。</p>
       </div>
-      <div class="tag">NACA 2412 · PLA+ 原型模具 · v1.2.2</div>
+      <div class="tag">NACA 2412 · PLA+ 原型模具 · v1.3.0</div>
     </header>
 
     <div class="layout">
@@ -70,6 +70,17 @@
             <label><span class="field-title">外角圓角 <span class="unit">mm</span></span><input id="cornerRadius" type="number" min="0" max="20" step="0.5" value="2"></label>
             <div id="adaptiveDensityResult" class="join-result" aria-live="polite">自動列距範圍</div>
             <div id="bladeSvgLengthResult" class="join-result" aria-live="polite">葉片 SVG 長度依站位與接合段設定計算</div>
+          </div>
+          <div class="root-slit-block" id="rootSlitBlock">
+            <div class="root-values">
+              <label class="wide"><span class="field-title">葉根割線模式</span><select id="rootSlitMode"><option value="off" selected>關閉（沿用 v1.2.2 割法）</option><option value="A">A 十字由疏變密</option><option value="B">B 方形螺旋</option><option value="C">C 葉根梳齒</option></select><p class="field-help" id="rootSlitModeHelp">全片沿用 v1.2.2 縱向短切，葉根不另外處理。</p></label>
+            </div>
+            <div class="root-values" id="rootSlitFields" hidden>
+              <label><span class="field-title">θ1：葉尖／中段切換扭角 <span class="unit">°</span></span><input id="rootSlitTheta1" type="number" min="10" max="45" step="1" value="23"><p class="field-help">扭角低於 θ1 的葉尖段維持原本短切（10–45°）。</p></label>
+              <label><span class="field-title">θ2：中段／高扭段切換扭角 <span class="unit">°</span></span><input id="rootSlitTheta2" type="number" min="25" max="60" step="1" value="42"><p class="field-help">扭角高於 θ2 的葉根段用最密的割法（25–60°，須大於 θ1）。</p></label>
+              <label class="wide"><span class="field-title">過渡帶寬度 <span class="unit">mm</span></span><input id="rootSlitBand" type="number" min="0" max="40" step="1" value="15"><p class="field-help">切換線兩側各一半，割線在帶內漸變（0–40 mm）。</p></label>
+              <div id="rootSlitResult" class="join-result" aria-live="polite">切換線位置</div>
+            </div>
           </div>
           <details class="advanced-settings">
             <summary>進階設定（每層排距、切段間隔、錯開量與魚骨角度）</summary>
@@ -173,7 +184,7 @@
               <label><span class="field-title">後緣最小厚度 <span class="unit">mm</span></span><input id="teMinThickness" type="number" min="0.4" max="4" step="0.1" value="1.2"></label>
             </div>
             <div id="bladeJointNote" class="join-result" aria-live="polite"></div>
-            <div class="part-list" id="bladePartList" style="margin-top:10px"></div>
+            <div class="part-list" id="bladePartList"></div>
           </div>
           <div id="ribToolingOutput" class="rib-preview" hidden>
             <h3 style="margin:0 0 6px">雷切翼肋骨架模輸出</h3>

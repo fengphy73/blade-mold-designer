@@ -1,8 +1,9 @@
 import { upperSurfaceLengthRatio } from './airfoil.js';
 import { effectiveJoint, jointDepthMm, seamProfile } from './joint.js';
 import {
-  DEFAULT_STATIONS, validateConfig, station, rawStation, slitPitchRange, bladeSvgStart, reliefDepth
+  DEFAULT_STATIONS, validateConfig, station, rawStation, slitPitchRange, bladeSvgStart, reliefDepth, configFileText
 } from './model.js';
+import { rootSlitSwitchLines, rootSlitOutlineStart } from './root-slits.js';
 import { buildMold } from './mesh.js';
 import { buildBlade } from './blade.js';
 import { meshToStl } from './stl.js';
@@ -12,7 +13,14 @@ import { drawAll, bindJointControls } from './preview2d.js';
 import { initPreview3d, updatePreview3d } from './preview3d.js';
 
 const ids = ['wood', 'clearance', 'printer', 'jointClearance', 'jointWidth', 'jointDepth', 'jointAngle', 'rootPadLength', 'rootBlendLength', 'rootBarWidth', 'rootBarThickness', 'rootBarPosition', 'rootBarClearance', 'moldMargin', 'moldBackThickness', 'stopHeight', 'cornerRadius', 'slitLength', 'slitPitch1', 'slitPitch2', 'slitGap', 'twistPerRow', 'minSlitPitch', 'slitPitchScale', 'twistAxis', 'slitAngle', 'slitStagger', 'chordSlitPitch', 'slitRootKeep', 'slitEdgeKeep', 'ribStockThickness', 'ribSpacing', 'ribTabWidth', 'ribSlotClearance', 'ribSheetWidth', 'ribSheetHeight', 'teMinThickness'];
-const paramIds = [...ids, 'rootPadEnabled', 'clampEnabled', 'locatorEnabled', 'jointManual', 'autoSlitDensity', 'slitPattern1', 'slitPattern2'];
+const rootSlitIds = ['rootSlitTheta1', 'rootSlitTheta2', 'rootSlitBand'];
+const paramIds = [...ids, 'rootPadEnabled', 'clampEnabled', 'locatorEnabled', 'jointManual', 'autoSlitDensity', 'slitPattern1', 'slitPattern2', 'rootSlitMode', ...rootSlitIds];
+const ROOT_SLIT_HELP = {
+  off: '全片沿用 v1.2.2 縱向短切，葉根不另外處理。',
+  A: 'A：同一種十字圖案往葉根逐漸加密，交界平順、強度最好；但圓孔多、雷切最久，軟化幅度中等。',
+  B: 'B：葉根改成方形螺旋，最軟、可雙向扭；但橋接最細、最容易斷，切割時間較長。',
+  C: 'C：葉根剖成幾條梳齒各自扭轉，兩層錯開膠合後最能鎖形；外形多 5 mm 要壓好後修切，剖縫末端要先試片確認不裂。'
+};
 const $ = id => document.getElementById(id);
 const val = id => Number($(id).value);
 let config = null;
@@ -27,6 +35,8 @@ function readForm() {
   c.autoSlitDensity = $('autoSlitDensity').checked;
   c.slitPattern1 = $('slitPattern1').value;
   c.slitPattern2 = $('slitPattern2').value;
+  c.rootSlitMode = $('rootSlitMode').value;
+  for (const id of rootSlitIds) c[id] = $(id).value === '' ? undefined : Number($(id).value);
   c.stations = Array.from($('stationRows').querySelectorAll('tr'), row => ({
     y: Number(row.querySelector('[data-key="y"]').value),
     chord: Number(row.querySelector('[data-key="chord"]').value),
@@ -63,7 +73,7 @@ function currentStations() {
 }
 
 function configFile() {
-  return JSON.stringify({ ...config, profile: 'NACA 2412', purpose: '上翼面配對壓模（含可選葉根平面接合段）' }, null, 2);
+  return configFileText(config);
 }
 
 function jointMode() {
@@ -104,7 +114,21 @@ function updateLabels(c) {
   const fullSpan = c.stations.at(-1).y;
   const p1 = slitPitchRange(c, c.slitPitch1, svgStart);
   const p2 = slitPitchRange(c, c.slitPitch2, svgStart);
-  $('bladeSvgLengthResult').textContent = `葉片 SVG 長度：${(fullSpan - svgStart).toFixed(1)} mm（距圓心 ${svgStart.toFixed(1)}→${fullSpan.toFixed(1)} mm）`;
+  const outStart = c.rootSlitMode === 'C' ? rootSlitOutlineStart(c) : svgStart;
+  $('bladeSvgLengthResult').textContent = c.rootSlitMode === 'C'
+    ? `葉片 SVG 長度：${(fullSpan - outStart).toFixed(1)} mm（含葉根修切量 ${(svgStart - outStart).toFixed(0)} mm；距圓心 ${outStart.toFixed(1)}→${fullSpan.toFixed(1)} mm，壓好後沿 r=${svgStart.toFixed(1)} mm 切齊）`
+    : `葉片 SVG 長度：${(fullSpan - svgStart).toFixed(1)} mm（距圓心 ${svgStart.toFixed(1)}→${fullSpan.toFixed(1)} mm）`;
+  const rootOn = c.rootSlitMode !== 'off';
+  $('rootSlitFields').hidden = !rootOn;
+  rootSlitIds.forEach(id => { $(id).disabled = !rootOn; });
+  $('rootSlitModeHelp').textContent = ROOT_SLIT_HELP[c.rootSlitMode] || ROOT_SLIT_HELP.off;
+  if (rootOn) {
+    const lines = rootSlitSwitchLines(c);
+    const fmtLines = (arr, t, theta) => arr.length
+      ? `${t}=${theta}° 切換線在 r≈${arr.map(x => x.y.toFixed(1)).join('、')} mm`
+      : `${t}=${theta}° 在葉片 SVG 範圍內沒有切換線`;
+    $('rootSlitResult').textContent = `${fmtLines(lines.theta2, 'θ2', c.rootSlitTheta2)}；${fmtLines(lines.theta1, 'θ1', c.rootSlitTheta1)}；過渡帶 ${c.rootSlitBand} mm。只改雷切 SVG 的葉根割線，STL 不變。`;
+  }
   $('adaptiveDensityResult').textContent = c.autoSlitDensity
     ? `目前每排間距估算：第一層 ${p1.min.toFixed(1)}–${p1.max.toFixed(1)} mm；第二層 ${p2.min.toFixed(1)}–${p2.max.toFixed(1)} mm`
     : `目前每排間距：第一層 ${Math.max(c.slitPitch1 * c.slitPitchScale, c.minSlitPitch, c.slitLength + c.slitGap).toFixed(1)} mm；第二層 ${Math.max(c.slitPitch2 * c.slitPitchScale, c.minSlitPitch, c.slitLength + c.slitGap).toFixed(1)} mm`;
@@ -270,6 +294,11 @@ function drawBladeParts(c, blades) {
 function update() {
   try {
     config = readForm();
+    if (config.rootSlitNotes.length) {
+      for (const id of rootSlitIds) $(id).value = String(config[id]);
+      $('rootSlitMode').value = config.rootSlitMode;
+      showToast(config.rootSlitNotes.join(' '));
+    }
     updateLabels(config);
     drawAll(config);
     const mode = $('toolingMode').value;
@@ -293,7 +322,8 @@ function update() {
 function wire() {
   ids.forEach(id => $(id).addEventListener('input', update));
   ['rootPadEnabled', 'autoSlitDensity', 'clampEnabled', 'locatorEnabled', 'jointManual'].forEach(id => $(id).addEventListener('change', update));
-  ['slitPattern1', 'slitPattern2'].forEach(id => $(id).addEventListener('change', update));
+  ['slitPattern1', 'slitPattern2', 'rootSlitMode'].forEach(id => $(id).addEventListener('change', update));
+  rootSlitIds.forEach(id => $(id).addEventListener('change', update));
   $('airfoilStation').addEventListener('change', () => { if (config) drawAll(config); });
   $('toolingMode').addEventListener('change', () => { applyToolingMode(); update(); });
   bindJointControls(() => { if (config) drawAll(config); });
@@ -345,6 +375,7 @@ function wire() {
         if (['rootPadEnabled', 'clampEnabled', 'locatorEnabled', 'jointManual', 'autoSlitDensity'].includes(id)) $(id).checked = Boolean(data[id]);
         else $(id).value = data[id];
       }
+      if (data.rootSlitMode === undefined) $('rootSlitMode').value = 'off';
       if (Array.isArray(data.stations) && data.stations.length >= 2) renderStationRows(data.stations);
       update();
       showToast('參數已載入。');
